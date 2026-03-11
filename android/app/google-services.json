@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "434379766095",
+    "project_id": "dayroutine-66593",
+    "storage_bucket": "dayroutine-66593.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:434379766095:android:52800bf2dc1c37e4ceed3a",
+        "android_client_info": {
+          "package_name": "com.example.dayroutine"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCy57zzUA3aWRKE_5NguDJLQllhR_a4cqY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
