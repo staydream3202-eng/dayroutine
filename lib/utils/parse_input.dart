@@ -1,4 +1,4 @@
-// parse_input.dart v6 - 10분 단위 지원
+// parse_input.dart v7 - 종료 시간 오전/오후 불명확 체크 추가
 class ParsedRoutine {
   final List<String> days;
   final int startHour;
@@ -7,6 +7,7 @@ class ParsedRoutine {
   final int endMinute;
   final String label;
   final bool needsAmPmCheck;
+  final bool endNeedsAmPmCheck; // 종료 시간 오전/오후 불명확
   final bool crossMidnight;
 
   const ParsedRoutine({
@@ -17,6 +18,7 @@ class ParsedRoutine {
     this.endMinute = 0,
     required this.label,
     this.needsAmPmCheck = false,
+    this.endNeedsAmPmCheck = false,
     this.crossMidnight = false,
   });
 }
@@ -143,6 +145,8 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
     rem = rem.replaceFirst(colonRm.group(0)!, ' ').trim();
   }
 
+  bool endAmbig = false;
+
   if (startH == -1) {
     for (final pat in [_rangeTimePattern, _fromToTimePattern]) {
       final m = pat.firstMatch(rem);
@@ -155,6 +159,7 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
           startH = sp.isEmpty ? sn : _applyAmPm(sp, sn); startM = _roundMinute(sm);
           endH   = ep.isEmpty ? en : _applyAmPm(ep, en); endM   = _roundMinute(em);
           ambig  = _isAmbiguous(sp, sn);
+          endAmbig = _isAmbiguous(ep, en);
           cross  = hasNextDay || (endH * 60 + endM > 0 && endH * 60 + endM < startH * 60 + startM);
           if (endH == 0 && endM == 0) endH = 24;
           rem = rem.replaceFirst(m.group(0)!, ' ').trim();
@@ -238,6 +243,6 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
   return [ParsedRoutine(
     days: days, startHour: startH, endHour: endH,
     startMinute: startM, endMinute: endM,
-    label: label, needsAmPmCheck: ambig, crossMidnight: cross,
+    label: label, needsAmPmCheck: ambig, endNeedsAmPmCheck: endAmbig, crossMidnight: cross,
   )];
 }

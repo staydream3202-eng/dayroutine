@@ -445,9 +445,10 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
 
     return Container(
       color: Colors.black.withAlpha(160),
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height - 80),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             // 달성률 카드 (이미지 저장 영역)
             RepaintBoundary(
@@ -585,6 +586,7 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
       ),
     );
   }
+
 
   Widget _sectionLabel(String label, int count) => Padding(
     padding: const EdgeInsets.only(bottom: 8),

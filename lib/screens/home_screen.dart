@@ -66,7 +66,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fullReset() async {
     await _storage.clearAllUserData();
-    final resetSettings = _settings.copyWith(scheduleLibrary: []);
+    final defaultSleep = {for (final d in ['월','화','수','목','금','토','일']) d: SleepSchedule()};
+    final resetSettings = _settings.copyWith(scheduleLibrary: [], sleepByDay: defaultSleep);
     await _storage.saveSettings(resetSettings);
     setState(() { _routines = []; _colorIndex = 0; _settings = resetSettings; });
   }
@@ -90,31 +91,70 @@ class _HomeScreenState extends State<HomeScreen> {
 
     for (final p in list) {
       if (p.crossMidnight) hasNextDay = true;
-      if (p.needsAmPmCheck) {
-        final choice = await showDialog<String>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Row(children: [
-              Icon(Icons.access_time, color: _themeColor),
-              const SizedBox(width: 8),
-              Text('${p.startHour}시 — 오전/오후?'),
-            ]),
-            content: Text('"${p.label}" 일정의 시간을 선택해주세요'),
-            actions: [
-              OutlinedButton(onPressed: () => Navigator.pop(ctx, 'am'), child: Text('오전 ${p.startHour}시')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _themeColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                onPressed: () => Navigator.pop(ctx, 'pm'),
-                child: Text('오후 ${p.startHour}시', style: const TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-        if (choice == null) return;
-        final newStart = choice == 'pm' ? p.startHour + 12 : p.startHour;
-        resolved.add(ParsedRoutine(days: p.days, label: p.label, startHour: newStart, endHour: newStart + 1,
-            startMinute: p.startMinute, endMinute: p.endMinute));
+
+      if (p.needsAmPmCheck || p.endNeedsAmPmCheck) {
+        int newStart = p.startHour;
+        int newEnd = p.endHour;
+
+        if (p.needsAmPmCheck) {
+          final choice = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(children: [
+                Icon(Icons.access_time, color: _themeColor),
+                const SizedBox(width: 8),
+                Text('시작 ${p.startHour}시 — 오전/오후?'),
+              ]),
+              content: Text('"${p.label}" 일정의 시작 시간을 선택해주세요'),
+              actions: [
+                OutlinedButton(onPressed: () => Navigator.pop(ctx, 'am'), child: Text('오전 ${p.startHour}시')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: _themeColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: () => Navigator.pop(ctx, 'pm'),
+                  child: Text('오후 ${p.startHour}시', style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          );
+          if (choice == null) return;
+          newStart = choice == 'pm' ? p.startHour + 12 : p.startHour;
+          // 단일 시간 패턴(종료 시간 명시 없음)이면 종료 시간도 함께 조정
+          if (!p.endNeedsAmPmCheck && p.endHour == p.startHour + 1) {
+            newEnd = newStart + 1;
+          }
+        }
+
+        if (p.endNeedsAmPmCheck) {
+          final choice = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(children: [
+                Icon(Icons.access_time, color: _themeColor),
+                const SizedBox(width: 8),
+                Text('종료 ${p.endHour}시 — 오전/오후?'),
+              ]),
+              content: Text('"${p.label}" 일정의 종료 시간을 선택해주세요'),
+              actions: [
+                OutlinedButton(onPressed: () => Navigator.pop(ctx, 'am'), child: Text('오전 ${p.endHour}시')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: _themeColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: () => Navigator.pop(ctx, 'pm'),
+                  child: Text('오후 ${p.endHour}시', style: const TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          );
+          if (choice == null) return;
+          newEnd = choice == 'pm' ? p.endHour + 12 : p.endHour;
+        }
+
+        resolved.add(ParsedRoutine(
+          days: p.days, label: p.label,
+          startHour: newStart, endHour: newEnd,
+          startMinute: p.startMinute, endMinute: p.endMinute,
+        ));
       } else {
         resolved.add(p);
       }

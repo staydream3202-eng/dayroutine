@@ -41,7 +41,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final keyDay = day == '전체' ? '월' : day;
     final current = _s.sleepByDay[keyDay] ?? SleepSchedule();
     int sleepH = current.sleepHour, wakeH = current.wakeHour;
-    bool sleepNextDay = current.sleepNextDay;
 
     showDialog(
       context: context,
@@ -60,24 +59,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               )),
               SizedBox(width: 36, child: Text('$sleepH시', style: const TextStyle(fontSize: 12), textAlign: TextAlign.right)),
             ]),
-            // 익일 체크박스 (취침이 익일 오전인 경우)
-            Row(children: [
-              const SizedBox(width: 40),
-              Checkbox(
-                value: sleepNextDay, activeColor: _theme,
-                onChanged: (v) => setD(() => sleepNextDay = v ?? false),
-              ),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setD(() => sleepNextDay = !sleepNextDay),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('익일 체크', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    Text('체크 시 취침 시간을 익일 오전으로 인식\n(오전 0~11시 = 다음날 새벽)',
-                      style: TextStyle(fontSize: 10, color: Colors.grey[500])),
-                  ]),
-                ),
-              ),
-            ]),
             const Divider(height: 16),
             // 기상 시간
             Row(children: [
@@ -94,9 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(color: _theme.withAlpha(20), borderRadius: BorderRadius.circular(12)),
               child: Text(
-                sleepNextDay
-                    ? '취침 익일 $sleepH:00  →  기상 $wakeH:00'
-                    : '취침 $sleepH:00  →  기상 $wakeH:00',
+                '취침 $sleepH:00  →  기상 $wakeH:00',
                 style: TextStyle(color: _theme, fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
@@ -106,11 +85,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ]),
           actions: [
+            TextButton(
+              onPressed: () {
+                setD(() { sleepH = 0; wakeH = 0; });
+                final defaultS = SleepSchedule();
+                if (_s.perDaySleep) {
+                  final m = Map<String, SleepSchedule>.from(_s.sleepByDay);
+                  m[keyDay] = defaultS;
+                  _emit(_s.copyWith(sleepByDay: m));
+                } else {
+                  _emit(_s.copyWith(sleepByDay: {for (final d in _days) d: defaultS}));
+                }
+                Navigator.pop(ctx);
+              },
+              child: Text('초기화', style: TextStyle(color: Colors.grey[500])),
+            ),
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _theme, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               onPressed: () {
-                final newS = SleepSchedule(sleepHour: sleepH, wakeHour: wakeH, sleepNextDay: sleepNextDay);
+                final newS = SleepSchedule(sleepHour: sleepH, wakeHour: wakeH);
                 if (_s.perDaySleep) {
                   final m = Map<String, SleepSchedule>.from(_s.sleepByDay);
                   m[keyDay] = newS;
@@ -445,9 +439,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: Text(day == '전체' ? '전체 요일' : '$day요일',
         style: TextStyle(fontSize: 13 * _s.fontSize, fontWeight: FontWeight.w500)),
       subtitle: Text(
-        s.sleepNextDay
-            ? '취침 익일 ${s.sleepHour}:00  →  기상 ${s.wakeHour}:00'
-            : '취침 ${s.sleepHour}:00  →  기상 ${s.wakeHour}:00',
+        '취침 ${s.sleepHour}:00  →  기상 ${s.wakeHour}:00',
         style: TextStyle(fontSize: 11, color: Colors.grey[500])),
       trailing: Icon(Icons.chevron_right, color: Colors.grey[400], size: 18),
       onTap: () => _showSleepEditor(day == '전체' ? '전체' : day),

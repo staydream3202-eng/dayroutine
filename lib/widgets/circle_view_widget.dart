@@ -300,7 +300,9 @@ class _CirclePainter extends CustomPainter {
     final paint = Paint()..color = const Color(0xFFD0D4F0)..strokeWidth = 0.8;
     for (int h = 0; h < 24; h++) {
       final angle = _hourToAngle(h);
-      final isMajor = h % 6 == 0;
+      // 볼드 위치는 실제 hour가 아닌 원 위의 위치(adjusted) 기준으로 고정
+      final adjusted = (h - dayStartHour + 24) % 24;
+      final isMajor = adjusted % 6 == 0;
       final tickInner = isMajor ? innerR + 2 : outerR - 8;
       final tickOuter = outerR;
       canvas.drawLine(
@@ -309,9 +311,11 @@ class _CirclePainter extends CustomPainter {
         paint..strokeWidth = isMajor ? 1.5 : 0.6,
       );
 
+      // displayH: 실제 시각을 그대로 표시
+      final displayH = h;
+
       if (showTimeLabels) {
         // 1시간 단위 전부 표시
-        final displayH = (h + dayStartHour) % 24;
         final tp = TextPainter(
           text: TextSpan(
             text: '$displayH',
@@ -324,7 +328,6 @@ class _CirclePainter extends CustomPainter {
         tp.paint(canvas,
           center + Offset(math.cos(angle) * labelR - tp.width / 2, math.sin(angle) * labelR - tp.height / 2));
       } else if (isMajor) {
-        final displayH = (h + dayStartHour) % 24;
         final tp = TextPainter(
           text: TextSpan(text: '$displayH시', style: const TextStyle(fontSize: 9, color: Color(0xFF8892C8))),
           textDirection: TextDirection.ltr,
