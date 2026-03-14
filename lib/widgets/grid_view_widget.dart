@@ -1,8 +1,10 @@
-// grid_view_widget.dart v6
+// grid_view_widget.dart v8
 // - 스크롤 없이 0~23시 한 화면에 표시
 // - 이미지 저장 시 전체 캡처 (forExport)
 // - 익일 일정: 오늘 오후8시~0시 + 다음날 0시~3시 분리 표시
 // - 10분 단위 렌더링 지원
+// - 블록 텍스트: colW·블록 높이 기반 폰트 자동 조절, maxLines 동적 계산
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/routine.dart';
 import '../utils/colors.dart';
@@ -214,22 +216,27 @@ class GridViewWidget extends StatelessWidget {
                 border: Border.all(color: color, width: 0.5),
               ),
               child: height >= rowH * 0.7
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Text(
-                          r.label,
-                          textAlign: TextAlign.center,
-                          maxLines: height > rowH * 2 ? 3 : 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: (colW * 0.10 * fontSize).clamp(7.0, 14.0),
-                            color: textColor,
-                            fontWeight: FontWeight.w600,
+                  ? () {
+                      // colW와 블록 높이를 모두 고려한 폰트 크기 계산
+                      final blockFontSize = (math.min(colW * 0.10, height * 0.28) * fontSize).clamp(7.0, 14.0);
+                      final maxLn = (height / (blockFontSize + 4)).floor().clamp(1, 3);
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: Text(
+                            r.label,
+                            textAlign: TextAlign.center,
+                            maxLines: maxLn,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: blockFontSize,
+                              color: textColor,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
-                    )
+                      );
+                    }()
                   : null,
             ),
           ),

@@ -1,4 +1,4 @@
-// home_screen.dart v7
+// home_screen.dart v8.1
 // - To-do list 워딩 통일
 // - 로고 클릭 → 랜딩 이동
 // - 직접 설정 요일 한 줄 (모바일)
@@ -9,7 +9,7 @@
 // - 하루종일 등록 지원
 // - perDaySleep+useWakeHourAsStart → 격자 0시 고정, 원형 요일별 기상시간 적용
 // - resetToken: 전체 초기화 시 TodoScreen 강제 리로드
-// ignore: avoid_web_libraries_in_flutter
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -93,7 +93,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final list = parseInput(text);
     if (list == null || list.isEmpty) {
-      setState(() => _errorText = '형식을 확인해주세요\n예: 월~금 오후 2시 운동 / 일 오후 5시부터 익일 3시 작업');
+      setState(() => _errorText = null);
+      _showParseErrorDialog();
       return;
     }
 
@@ -137,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         if (p.endNeedsAmPmCheck) {
+          if (!mounted) return;
           final choice = await showDialog<String>(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -206,13 +208,63 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    setState(() { _errorText = null; _inputCtrl.clear(); });
+    // 새 리스트 참조 생성 → TodoScreen.didUpdateWidget에서 _syncRoutines() 즉시 호출
+    setState(() { _routines = List.from(_routines); _errorText = null; _inputCtrl.clear(); });
     _showSnack('${resolved.length}개 일정 등록 완료 ✅');
 
     // 익일 일정 등록 시 팝업 안내
     if (hasNextDay && mounted) {
       Future.delayed(const Duration(milliseconds: 400), () => _showNextDayPopup());
     }
+  }
+
+  void _showParseErrorDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Icon(Icons.info_outline, color: _themeColor),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('입력 형식 안내', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15))),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('요일과 시간을 인식하지 못했습니다.\n아래 형식을 참고해주세요.', style: TextStyle(fontSize: 13, height: 1.5)),
+          const SizedBox(height: 12),
+          _formatExample('요일 + 시간 범위', '월~금 오후 2시 운동'),
+          _formatExample('특정 요일 여러 개', '월,화,수 오전 9시 영어'),
+          _formatExample('오늘/내일/모레/글피', '오늘 오후 3시 운동'),
+          _formatExample('익일 일정', '일 오후 11시부터 익일 3시 작업'),
+          _formatExample('하루종일', '매일 하루종일 휴식'),
+          _formatExample('복수 일정 구분', '월 오전 6시 운동 / 화 오후 2시 공부'),
+        ]),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _themeColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('확인', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _formatExample(String title, String example) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(width: 4, height: 4, margin: const EdgeInsets.only(top: 7, right: 6),
+          decoration: BoxDecoration(color: _themeColor, shape: BoxShape.circle)),
+        Expanded(child: RichText(text: TextSpan(
+          style: const TextStyle(fontSize: 12, color: Colors.black87),
+          children: [
+            TextSpan(text: '$title: ', style: const TextStyle(fontWeight: FontWeight.w600)),
+            TextSpan(text: example, style: TextStyle(color: Colors.grey[600])),
+          ],
+        ))),
+      ]),
+    );
   }
 
   Future<void> _showNextDayPopup() async {
@@ -285,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
       startHour: startH, endHour: endH, startMinute: startM, endMinute: endM,
       colorIndex: _colorIndex % routineColors.length, createdAt: DateTime.now());
     await _storage.addRoutine(r);
-    setState(() { _routines.add(r); _colorIndex++; });
+    setState(() { _routines = List.from(_routines)..add(r); _colorIndex++; });
     _showSnack('$day요일 $label 등록 완료 ✅');
   }
 

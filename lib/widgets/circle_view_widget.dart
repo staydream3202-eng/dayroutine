@@ -1,4 +1,6 @@
-// circle_view_widget.dart v7.1
+// circle_view_widget.dart v8
+// - 익일 레이블 '익0/익1...' → '24시/1시...' 표기
+// - 익일 표시 팝업: cross-midnight 루틴만 표시, 없을 시 안내 다이얼로그
 // - 중앙 연필 아이콘 삭제
 // - 익일 표시 버튼 (기상 시간 기준 사용 시 숨김)
 // - wakeHoursByDay: 요일별 개별 기상 시간 지원
@@ -83,20 +85,35 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
       setState(() { _nextDayEnabled = false; _nextDayEndTotal = null; });
       return;
     }
-    // 다음 요일 루틴 목록
     final nextDayName = _days[(_days.indexOf(_selectedDay) + 1) % 7];
-    final nextDayRoutines = widget.routines
-        .where((r) => r.days.contains(nextDayName))
-        .toList()
-      ..sort((a, b) => a.endTotal.compareTo(b.endTotal));
 
-    if (nextDayRoutines.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('다음 날에 등록된 일정이 없습니다'), behavior: SnackBarBehavior.floating),
+    // 오늘 루틴 중 자정(24시)에 끝나는 cross-midnight 루틴
+    final todayCross = widget.routines
+        .where((r) => r.days.contains(_selectedDay) && r.endHour == 24 && r.endMinute == 0)
+        .toList();
+
+    // 익일에서 0시 시작 + 오늘 cross-midnight 루틴과 라벨·색상이 일치하는 것만
+    final crossNext = widget.routines.where((r) {
+      if (!r.days.contains(nextDayName)) return false;
+      if (r.startHour != 0 || r.startMinute != 0) return false;
+      return todayCross.any((t) => t.label == r.label && t.colorIndex == r.colorIndex);
+    }).toList()..sort((a, b) => a.endTotal.compareTo(b.endTotal));
+
+    if (crossNext.isEmpty) {
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('익일 표시', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+          content: const Text('익일까지 이어지는 일정이 없습니다.', textAlign: TextAlign.center),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('확인'))],
+        ),
       );
       return;
     }
 
+    if (!mounted) return;
     final selected = await showDialog<Routine>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -107,7 +124,7 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
           width: 300,
           child: ListView(
             shrinkWrap: true,
-            children: nextDayRoutines.map((r) {
+            children: crossNext.map((r) {
               final color = r.customColor ?? routineColors[r.colorIndex % routineColors.length].bg;
               return ListTile(
                 leading: Container(width: 12, height: 12,
@@ -455,15 +472,23 @@ class _CirclePainter extends CustomPainter {
       // 레이블
       final String displayText;
       if (h < 24) {
-        if (showTimeLabels) displayText = '$h';
-        else if (isMajor) displayText = '$h시';
-        else displayText = '';
+        if (showTimeLabels) {
+          displayText = '$h';
+        } else if (isMajor) {
+          displayText = '$h시';
+        } else {
+          displayText = '';
+        }
       } else {
-        // 익일 표시
+        // 익일 표시: 0 → '24시', 1 → '1시', ...
         final nd = h - 24;
-        if (showTimeLabels) displayText = '익${nd}';
-        else if (isMajor) displayText = '익일\n${nd}시';
-        else displayText = '';
+        if (showTimeLabels) {
+          displayText = nd == 0 ? '24' : '$nd';
+        } else if (isMajor) {
+          displayText = nd == 0 ? '24시' : '$nd시';
+        } else {
+          displayText = '';
+        }
       }
 
       if (displayText.isNotEmpty) {

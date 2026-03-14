@@ -1,6 +1,7 @@
-// calendar_screen.dart v5
+// calendar_screen.dart v8
 // - 캘린더 통합 바(Bar) 뷰: 며칠 지속 루틴을 하나의 바로 표시
 // - 텍스트 중앙 정렬
+// - cross-midnight 연속 루틴(익일 0시 시작 split본)은 캘린더에서 제외
 import 'package:flutter/material.dart';
 import '../models/routine.dart';
 import '../utils/colors.dart';
@@ -162,8 +163,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // 이번 주 요일 문자열
     final wdNames = ['월', '화', '수', '목', '금', '토', '일'];
 
-    // 시작 시간 기준 정렬
-    final sortedRoutines = [...widget.routines]..sort((a, b) => a.startTotal.compareTo(b.startTotal));
+    // cross-midnight split 된 익일 연속 루틴 ID 수집 (캘린더에서 제외)
+    final continuationIds = <String>{};
+    for (final r in widget.routines) {
+      if (r.startHour != 0 || r.startMinute != 0) continue;
+      for (final day in r.days) {
+        final dayIdx = wdNames.indexOf(day);
+        if (dayIdx < 0) continue;
+        final prevDay = wdNames[(dayIdx - 1 + 7) % 7];
+        final hasPrev = widget.routines.any((other) =>
+          other.id != r.id &&
+          other.days.contains(prevDay) &&
+          other.label == r.label &&
+          other.colorIndex == r.colorIndex &&
+          other.endHour == 24 && other.endMinute == 0);
+        if (hasPrev) { continuationIds.add(r.id); break; }
+      }
+    }
+
+    // 시작 시간 기준 정렬, 익일 연속 루틴 제외
+    final sortedRoutines = [...widget.routines]
+      ..removeWhere((r) => continuationIds.contains(r.id))
+      ..sort((a, b) => a.startTotal.compareTo(b.startTotal));
 
     // 각 루틴에 대해 이번 주의 연속 구간 찾기
     for (final r in sortedRoutines) {

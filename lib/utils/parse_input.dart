@@ -1,4 +1,5 @@
-// parse_input.dart v7 - allDay 지원, 아침/저녁/낮 prefix, 다음날/담날 hasNextDay
+// parse_input.dart v8.1 - allDay 지원, 아침/저녁/낮 prefix, 다음날/담날 hasNextDay, 쉼표 레이블 버그 수정
+// - 오늘/내일/모레/글피 → 당일 요일 자동 변환
 class ParsedRoutine {
   final List<String> days;
   final int startHour;
@@ -26,6 +27,16 @@ class ParsedRoutine {
 }
 
 const _dayOrder = ['월', '화', '수', '목', '금', '토', '일'];
+
+// 날짜 키워드 → 요일 변환 (오늘=+0, 내일=+1, 모레=+2, 글피=+3)
+String _dateOffsetToDay(int offsetDays) {
+  final wd = DateTime.now().weekday; // 1=월, 7=일
+  final idx = (wd - 1 + offsetDays) % 7;
+  return _dayOrder[idx];
+}
+
+// 날짜 키워드 목록 (긴 것 우선)
+const _dateKeywords = ['글피', '모레', '내일', '오늘'];
 
 const Map<String, int> _dayMap = {
   '월': 0, '월요일': 0, '월욜': 0, '월일': 0, '월날': 0,
@@ -231,8 +242,19 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
 List<String>? _extractDays(String rem, ParsedRoutine? prev) {
   List<String>? days;
 
-  for (final kw in ['매일', '평일', '주중', '주말']) {
-    if (rem.contains(kw)) { days = parseDays(kw); break; }
+  // 날짜 키워드: 오늘/내일/모레/글피 → 해당 요일로 변환
+  const offsetMap = {'오늘': 0, '내일': 1, '모레': 2, '글피': 3};
+  for (final kw in _dateKeywords) {
+    if (rem.contains(kw)) {
+      days = [_dateOffsetToDay(offsetMap[kw]!)];
+      break;
+    }
+  }
+
+  if (days == null) {
+    for (final kw in ['매일', '평일', '주중', '주말']) {
+      if (rem.contains(kw)) { days = parseDays(kw); break; }
+    }
   }
 
   if (days == null) {
@@ -283,9 +305,14 @@ String _cleanLabel(String rem, List<String> days) {
   for (final kw in _allDayKeywords) {
     label = label.replaceAll(kw, '');
   }
+  // 날짜 키워드 제거
+  for (final kw in _dateKeywords) {
+    label = label.replaceAll(kw, '');
+  }
   label = label.replaceAll('부터', '').replaceAll('에서', '').replaceAll('까지', '')
       .replaceAll('익일', '').replaceAll('다음날', '').replaceAll('담날', '')
       .replaceAll('다음 날', '').replaceAll('~', '')
+      .replaceAll(',', ' ')  // 요일 구분 콤마 제거
       .replaceAll(RegExp(r'\s{2,}'), ' ').trim();
   return label;
 }

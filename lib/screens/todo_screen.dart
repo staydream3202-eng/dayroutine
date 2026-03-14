@@ -2,7 +2,7 @@
 // - 당일 요일 루틴만 자동 연동
 // - resetToken: 초기화 시 상태 재로딩
 // - _syncRoutines: 삭제된 루틴 todo도 제거
-// ignore: avoid_web_libraries_in_flutter
+// ignore: avoid_web_libraries_in_flutter, deprecated_member_use
 import 'dart:html' as html;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -443,10 +443,15 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     final endLabel = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
 
     final String message;
-    if (progress == 1.0) message = '🎉 완벽한 하루였어요!';
-    else if (progress >= 0.7) message = '👏 훌륭한 하루였어요!';
-    else if (progress >= 0.4) message = '💪 잘 하셨어요!';
-    else message = '🌱 내일도 파이팅!';
+    if (progress == 1.0) {
+      message = '🎉 완벽한 하루였어요!';
+    } else if (progress >= 0.7) {
+      message = '👏 훌륭한 하루였어요!';
+    } else if (progress >= 0.4) {
+      message = '💪 잘 하셨어요!';
+    } else {
+      message = '🌱 내일도 파이팅!';
+    }
 
     return Container(
       color: Colors.black.withAlpha(160),
