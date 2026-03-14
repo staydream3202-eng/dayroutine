@@ -12,7 +12,12 @@
           "package_name": "com.example.dayroutine"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "434379766095-ru2f25vcr60lkmg15ppflq6s0odfplp1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCy57zzUA3aWRKE_5NguDJLQllhR_a4cqY"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "434379766095-ru2f25vcr60lkmg15ppflq6s0odfplp1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "434379766095-amo1tqafrbtmpk01jo6ka9r94e6t9rgi.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.dayroutine"
+              }
+            }
+          ]
         }
       }
     }

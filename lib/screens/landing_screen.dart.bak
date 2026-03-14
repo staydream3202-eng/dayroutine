@@ -1,0 +1,301 @@
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+
+class LandingScreen extends StatefulWidget {
+  final VoidCallback onStart;
+  const LandingScreen({super.key, required this.onStart});
+  @override
+  State<LandingScreen> createState() => _LandingScreenState();
+}
+
+class _LandingScreenState extends State<LandingScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _fade;
+  late Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900));
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+            begin: const Offset(0, 0.08), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const primary = Color(0xFF667eea);
+    const secondary = Color(0xFF764ba2);
+
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [primary, secondary],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Stack(children: [
+          // 배경 — 미니멀 시간표 그래픽
+          Positioned.fill(child: CustomPaint(painter: _BgPainter())),
+
+          // 콘텐츠
+          SafeArea(
+            child: FadeTransition(
+              opacity: _fade,
+              child: SlideTransition(
+                position: _slide,
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 40),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // 로고
+                        const Text('🗓', style: TextStyle(fontSize: 64)),
+                        const SizedBox(height: 12),
+                        const Text(
+                          '데이루틴',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -1,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withAlpha(30),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'DayRoutine',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+
+                        // 안내 문구
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withAlpha(18),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                                color: Colors.white.withAlpha(40), width: 1),
+                          ),
+                          child: const Text(
+                            '복잡한 기록은 그만,\n자연어로 일정을 기록하고\n당신만의 맞춤형 시간표를\n완성하세요.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              height: 1.65,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+
+                        // 특징 뱃지
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          alignment: WrapAlignment.center,
+                          children: const [
+                            _Badge(icon: '✍️', text: '자연어 입력'),
+                            _Badge(icon: '🔄', text: '격자·원형 시간표'),
+                            _Badge(icon: '🌙', text: '야간 근무자 지원'),
+                            _Badge(icon: '📥', text: '이미지 저장'),
+                          ],
+                        ),
+                        const SizedBox(height: 44),
+
+                        // 시작하기 버튼
+                        GestureDetector(
+                          onTap: widget.onStart,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withAlpha(50),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  '시작하기',
+                                  style: TextStyle(
+                                    color: primary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(Icons.arrow_forward_rounded,
+                                    color: primary, size: 20),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          '로그인 없이 바로 시작',
+                          style: TextStyle(
+                              color: Colors.white54, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String icon;
+  final String text;
+  const _Badge({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(22),
+        borderRadius: BorderRadius.circular(30),
+        border:
+            Border.all(color: Colors.white.withAlpha(50), width: 1),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(icon, style: const TextStyle(fontSize: 14)),
+        const SizedBox(width: 6),
+        Text(text,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+}
+
+// 배경 — 반투명 격자+원형 그래픽
+class _BgPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withAlpha(12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    // 격자형 미니 시간표 (우하단)
+    final gLeft = size.width * 0.55;
+    final gTop = size.height * 0.55;
+    const cols = 7;
+    const rows = 8;
+    const cell = 22.0;
+    for (int r = 0; r <= rows; r++) {
+      canvas.drawLine(
+        Offset(gLeft, gTop + r * cell),
+        Offset(gLeft + cols * cell, gTop + r * cell),
+        paint,
+      );
+    }
+    for (int c = 0; c <= cols; c++) {
+      canvas.drawLine(
+        Offset(gLeft + c * cell, gTop),
+        Offset(gLeft + c * cell, gTop + rows * cell),
+        paint,
+      );
+    }
+    // 격자 안 루틴 블록 (데코)
+    final blockPaint = Paint()
+      ..color = Colors.white.withAlpha(20)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+        Rect.fromLTWH(gLeft + cell, gTop + cell, cell * 2, cell * 3),
+        blockPaint);
+    canvas.drawRect(
+        Rect.fromLTWH(gLeft + cell * 4, gTop + cell * 2, cell, cell * 2),
+        blockPaint);
+
+    // 원형 시간표 (좌상단)
+    final cx = size.width * 0.18;
+    final cy = size.height * 0.2;
+    const outerR = 60.0;
+    const innerR = 26.0;
+    final ringPaint = Paint()
+      ..color = Colors.white.withAlpha(14)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (outerR - innerR);
+    canvas.drawCircle(Offset(cx, cy), (outerR + innerR) / 2, ringPaint);
+
+    // 원형 루틴 호 (데코)
+    final arcPaint = Paint()
+      ..color = Colors.white.withAlpha(35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (outerR - innerR) * 0.9;
+    canvas.drawArc(
+      Rect.fromCircle(
+          center: Offset(cx, cy), radius: (outerR + innerR) / 2),
+      -math.pi / 2,
+      math.pi * 0.8,
+      false,
+      arcPaint,
+    );
+
+    // 눈금선
+    final tickPaint = Paint()
+      ..color = Colors.white.withAlpha(25)
+      ..strokeWidth = 1;
+    for (int i = 0; i < 12; i++) {
+      final angle = (i / 12) * 2 * math.pi - math.pi / 2;
+      canvas.drawLine(
+        Offset(cx + math.cos(angle) * innerR,
+            cy + math.sin(angle) * innerR),
+        Offset(cx + math.cos(angle) * outerR,
+            cy + math.sin(angle) * outerR),
+        tickPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
+}

@@ -1,46 +1,76 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
-
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
+  <meta name="description" content="데이루틴 - 나만의 루틴 시간표">
+  <!-- 모바일 웹앱 최적화 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="dayroutine">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="데이루틴">
+  <meta name="theme-color" content="#667eea">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
+  <title>데이루틴 - DayRoutine</title>
 
-  <title>dayroutine</title>
+  <!-- 한국어 폰트: display=block으로 폰트 로드 전 빈 박스 방지 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=block">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=block" rel="stylesheet">
+
+  <style>
+    /* 폰트 로드 완료 전까지 텍스트 숨김 방지: 시스템 폰트 우선 적용 후 전환 */
+    * {
+      font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', sans-serif !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #F8F9FF; }
+    #loading-indicator {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      z-index: 9999;
+    }
+    #loading-indicator .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #e0e0e0; border-top: 3px solid #667eea;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    #loading-indicator .text { color: #667eea; font-size: 14px; font-family: system-ui, sans-serif; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <div id="loading-indicator">
+    <div class="spinner"></div>
+    <div class="text">데이루틴 로딩 중...</div>
+  </div>
+  <script>
+    // Flutter 첫 프레임 + 폰트 로드 완료 모두 기다린 후 로딩 숨김
+    var _flutterReady = false;
+    var _fontsReady = false;
+    function _hideLoader() {
+      if (_flutterReady && _fontsReady) {
+        var el = document.getElementById('loading-indicator');
+        if (el) el.style.display = 'none';
+      }
+    }
+    window.addEventListener('flutter-first-frame', function() {
+      _flutterReady = true;
+      _hideLoader();
+    });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function() { _fontsReady = true; _hideLoader(); });
+    } else {
+      // fonts API 미지원 브라우저: 바로 준비 처리
+      _fontsReady = true;
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

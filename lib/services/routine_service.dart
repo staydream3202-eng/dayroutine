@@ -11,11 +11,15 @@ class RoutineService {
     return _routines(uid)
         .orderBy('createdAt', descending: false)
         .snapshots()
-        .map((snap) => snap.docs.map((doc) => Routine.fromFirestore(doc)).toList());
+        .map((snap) => snap.docs.map((doc) {
+          final data = Map<String, dynamic>.from(doc.data() as Map);
+          return Routine.fromJson({...data, 'id': doc.id});
+        }).toList());
   }
 
   Future<void> addRoutine(String uid, Routine routine) async {
-    await _routines(uid).add(routine.toFirestore());
+    final data = routine.toJson()..remove('id');
+    await _routines(uid).add(data);
   }
 
   Future<void> deleteRoutine(String uid, String routineId) async {
@@ -23,6 +27,7 @@ class RoutineService {
   }
 
   Future<void> updateRoutine(String uid, Routine routine) async {
-    await _routines(uid).doc(routine.id).update(routine.toFirestore());
+    final data = routine.toJson()..remove('id');
+    await _routines(uid).doc(routine.id).update(data);
   }
 }
