@@ -6,24 +6,26 @@
 
 class SleepSchedule {
   final int sleepHour;
+  final int sleepMinute; // v9: 10분 단위
   final int wakeHour;
-  final bool sleepNextDay; // 취침이 익일(오전 0~11시)인지
+  final int wakeMinute; // v9: 10분 단위
+  final bool sleepNextDay;
 
-  SleepSchedule({this.sleepHour = 0, this.wakeHour = 0, this.sleepNextDay = false});
+  SleepSchedule({this.sleepHour = 0, this.sleepMinute = 0, this.wakeHour = 0, this.wakeMinute = 0, this.sleepNextDay = false});
 
   Map<String, dynamic> toJson() => {
-    'sleepHour': sleepHour,
-    'wakeHour': wakeHour,
+    'sleepHour': sleepHour, 'sleepMinute': sleepMinute,
+    'wakeHour': wakeHour, 'wakeMinute': wakeMinute,
     'sleepNextDay': sleepNextDay,
   };
   factory SleepSchedule.fromJson(Map<String, dynamic> j) => SleepSchedule(
-    sleepHour: j['sleepHour'] ?? 0,
-    wakeHour: j['wakeHour'] ?? 0,
+    sleepHour: j['sleepHour'] ?? 0, sleepMinute: j['sleepMinute'] ?? 0,
+    wakeHour: j['wakeHour'] ?? 0, wakeMinute: j['wakeMinute'] ?? 0,
     sleepNextDay: j['sleepNextDay'] ?? false,
   );
-  SleepSchedule copyWith({int? sleepHour, int? wakeHour, bool? sleepNextDay}) => SleepSchedule(
-    sleepHour: sleepHour ?? this.sleepHour,
-    wakeHour: wakeHour ?? this.wakeHour,
+  SleepSchedule copyWith({int? sleepHour, int? sleepMinute, int? wakeHour, int? wakeMinute, bool? sleepNextDay}) => SleepSchedule(
+    sleepHour: sleepHour ?? this.sleepHour, sleepMinute: sleepMinute ?? this.sleepMinute,
+    wakeHour: wakeHour ?? this.wakeHour, wakeMinute: wakeMinute ?? this.wakeMinute,
     sleepNextDay: sleepNextDay ?? this.sleepNextDay,
   );
 }

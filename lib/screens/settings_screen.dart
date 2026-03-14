@@ -39,7 +39,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showSleepEditor(String day) {
     final keyDay = day == '전체' ? '월' : day;
     final current = _s.sleepByDay[keyDay] ?? SleepSchedule();
-    int sleepH = current.sleepHour, wakeH = current.wakeHour;
+    int sleepH = current.sleepHour, sleepM = current.sleepMinute;
+    int wakeH = current.wakeHour, wakeM = current.wakeMinute;
+    // 슬라이더용 총 분 값 (0~23*60+50)
+    int sleepTotal = sleepH * 60 + sleepM;
+    int wakeTotal = wakeH * 60 + wakeM;
+
+    String fmtTime(int total) {
+      final h = total ~/ 60; final m = total % 60;
+      return '$h:${m.toString().padLeft(2, '0')}';
+    }
 
     showDialog(
       context: context,
@@ -52,29 +61,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Row(children: [
               const SizedBox(width: 40, child: Text('취침', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
               Expanded(child: Slider(
-                value: sleepH.toDouble(), min: 0, max: 23, divisions: 23,
-                activeColor: _theme, label: '$sleepH시',
-                onChanged: (v) => setD(() => sleepH = v.round()),
+                value: sleepTotal.toDouble(), min: 0, max: 23 * 60 + 50, divisions: (23 * 60 + 50) ~/ 10,
+                activeColor: _theme, label: fmtTime(sleepTotal),
+                onChanged: (v) => setD(() { sleepTotal = ((v / 10).round() * 10).clamp(0, 23 * 60 + 50); sleepH = sleepTotal ~/ 60; sleepM = sleepTotal % 60; }),
               )),
-              SizedBox(width: 36, child: Text('$sleepH시', style: const TextStyle(fontSize: 12), textAlign: TextAlign.right)),
+              SizedBox(width: 44, child: Text(fmtTime(sleepTotal), style: const TextStyle(fontSize: 12), textAlign: TextAlign.right)),
             ]),
             const Divider(height: 16),
             // 기상 시간
             Row(children: [
               const SizedBox(width: 40, child: Text('기상', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
               Expanded(child: Slider(
-                value: wakeH.toDouble(), min: 0, max: 23, divisions: 23,
-                activeColor: _theme, label: '$wakeH시',
-                onChanged: (v) => setD(() => wakeH = v.round()),
+                value: wakeTotal.toDouble(), min: 0, max: 23 * 60 + 50, divisions: (23 * 60 + 50) ~/ 10,
+                activeColor: _theme, label: fmtTime(wakeTotal),
+                onChanged: (v) => setD(() { wakeTotal = ((v / 10).round() * 10).clamp(0, 23 * 60 + 50); wakeH = wakeTotal ~/ 60; wakeM = wakeTotal % 60; }),
               )),
-              SizedBox(width: 36, child: Text('$wakeH시', style: const TextStyle(fontSize: 12), textAlign: TextAlign.right)),
+              SizedBox(width: 44, child: Text(fmtTime(wakeTotal), style: const TextStyle(fontSize: 12), textAlign: TextAlign.right)),
             ]),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(color: _theme.withAlpha(20), borderRadius: BorderRadius.circular(12)),
               child: Text(
-                '취침 $sleepH:00  →  기상 $wakeH:00',
+                '취침 ${fmtTime(sleepTotal)}  →  기상 ${fmtTime(wakeTotal)}',
                 style: TextStyle(color: _theme, fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
@@ -86,7 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                setD(() { sleepH = 0; wakeH = 0; });
+                setD(() { sleepTotal = 0; wakeTotal = 0; sleepH = 0; sleepM = 0; wakeH = 0; wakeM = 0; });
                 final defaultS = SleepSchedule();
                 if (_s.perDaySleep) {
                   final m = Map<String, SleepSchedule>.from(_s.sleepByDay);
@@ -103,7 +112,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: _theme, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               onPressed: () {
-                final newS = SleepSchedule(sleepHour: sleepH, wakeHour: wakeH);
+                final newS = SleepSchedule(sleepHour: sleepH, sleepMinute: sleepM, wakeHour: wakeH, wakeMinute: wakeM);
                 if (_s.perDaySleep) {
                   final m = Map<String, SleepSchedule>.from(_s.sleepByDay);
                   m[keyDay] = newS;
@@ -469,7 +478,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: Text(day == '전체' ? '전체 요일' : '$day요일',
         style: TextStyle(fontSize: 13 * _s.fontSize, fontWeight: FontWeight.w500)),
       subtitle: Text(
-        '취침 ${s.sleepHour}:00  →  기상 ${s.wakeHour}:00',
+        '취침 ${s.sleepHour}:${s.sleepMinute.toString().padLeft(2,'0')}  →  기상 ${s.wakeHour}:${s.wakeMinute.toString().padLeft(2,'0')}',
         style: TextStyle(fontSize: 11, color: Colors.grey[500])),
       trailing: Icon(Icons.chevron_right, color: Colors.grey[400], size: 18),
       onTap: () => _showSleepEditor(day == '전체' ? '전체' : day),

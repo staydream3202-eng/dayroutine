@@ -1,4 +1,4 @@
-// circle_view_widget.dart v8
+// circle_view_widget.dart v9
 // - 익일 레이블 '익0/익1...' → '24시/1시...' 표기
 // - 익일 표시 팝업: cross-midnight 루틴만 표시, 없을 시 안내 다이얼로그
 // - 중앙 연필 아이콘 삭제
@@ -39,7 +39,7 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
   late String _selectedDay;
   bool _showTimeLabels = false;
   bool _isDragging = false;
-  int _dragStartH = -1, _dragEndH = -1;
+  int _dragStartTotal = -1, _dragEndTotal = -1; // 분 단위 (10분 단위 스냅)
 
   // 익일 표시
   bool _nextDayEnabled = false;
@@ -66,7 +66,7 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
   // 익일 표시 ON 시 총 시간 범위(분)
   int get _totalSpanMinutes =>
       (_nextDayEnabled && _nextDayEndTotal != null && _nextDayEndTotal! > 0)
-          ? 24 * 60 + _nextDayEndTotal!
+          ? 24 * 60 + _nextDayEndTotal! + 60 // +60분 여유로 종료 시간 레이블 표시
           : 24 * 60;
 
   Color get _bg => const Color(0xFFF0F2FF);
@@ -92,11 +92,11 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
         .where((r) => r.days.contains(_selectedDay) && r.endHour == 24 && r.endMinute == 0)
         .toList();
 
-    // 익일에서 0시 시작 + 오늘 cross-midnight 루틴과 라벨·색상이 일치하는 것만
+    // 익일에서 0시 시작 + 오늘 cross-midnight 루틴과 라벨이 일치하는 것만
     final crossNext = widget.routines.where((r) {
       if (!r.days.contains(nextDayName)) return false;
       if (r.startHour != 0 || r.startMinute != 0) return false;
-      return todayCross.any((t) => t.label == r.label && t.colorIndex == r.colorIndex);
+      return todayCross.any((t) => t.label == r.label);
     }).toList()..sort((a, b) => a.endTotal.compareTo(b.endTotal));
 
     if (crossNext.isEmpty) {
@@ -252,8 +252,8 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
                       dayStartHour: _effectiveDayStartHour,
                       totalSpanMinutes: _totalSpanMinutes,
                       showTimeLabels: _showTimeLabels,
-                      dragStartH: _dragStartH,
-                      dragEndH: _dragEndH,
+                      dragStartTotal: _dragStartTotal,
+                      dragEndTotal: _dragEndTotal,
                       isDragging: _isDragging,
                     ),
                     child: Center(child: _buildCenterLabel(size)),
@@ -265,7 +265,7 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
         ),
       ),
 
-      if (_isDragging && _dragStartH >= 0 && _dragEndH >= 0)
+      if (_isDragging && _dragStartTotal >= 0 && _dragEndTotal >= 0)
         Container(
           margin: const EdgeInsets.all(10),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -275,7 +275,13 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
             border: Border.all(color: const Color(0xFF667eea).withAlpha(60)),
           ),
           child: Text(
-            '$_selectedDay요일  $_dragStartH:00 ~ $_dragEndH:00  (손가락을 떼면 등록)',
+            () {
+              final sH = math.min(_dragStartTotal, _dragEndTotal) ~/ 60;
+              final sM = math.min(_dragStartTotal, _dragEndTotal) % 60;
+              final eTotal = math.min(math.max(_dragStartTotal, _dragEndTotal) + 60, 24 * 60);
+              final eH = eTotal ~/ 60; final eM = eTotal % 60;
+              return '$_selectedDay요일  $sH:${sM.toString().padLeft(2,'0')} ~ $eH:${eM.toString().padLeft(2,'0')}  (손가락을 떼면 등록)';
+            }(),
             style: const TextStyle(fontSize: 11, color: Color(0xFF667eea), fontWeight: FontWeight.w600),
           ),
         ),
@@ -339,8 +345,8 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
     _center = Offset(box.size.width / 2, box.size.height / 2);
     setState(() {
       _isDragging = true;
-      _dragStartH = _posToHour(local, _center!);
-      _dragEndH = _dragStartH;
+      _dragStartTotal = _posToMinutes(local, _center!);
+      _dragEndTotal = _dragStartTotal;
     });
   }
 
@@ -348,23 +354,28 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
     if (_center == null) return;
     final box = context.findRenderObject() as RenderBox;
     final local = box.globalToLocal(d.globalPosition);
-    setState(() => _dragEndH = _posToHour(local, _center!));
+    setState(() => _dragEndTotal = _posToMinutes(local, _center!));
   }
 
   void _onDragEnd(DragEndDetails d) {
-    if (_dragStartH >= 0 && _dragEndH >= 0 && widget.onDragAdd != null) {
-      final s = math.min(_dragStartH, _dragEndH);
-      final e = math.max(_dragStartH, _dragEndH) + 1;
-      widget.onDragAdd!(_selectedDay, s, 0, e > 24 ? 24 : e, 0);
+    if (_dragStartTotal >= 0 && _dragEndTotal >= 0 && widget.onDragAdd != null) {
+      final sTotal = math.min(_dragStartTotal, _dragEndTotal);
+      final eTotal = math.min(math.max(_dragStartTotal, _dragEndTotal) + 60, 24 * 60);
+      final sH = sTotal ~/ 60; final sM = sTotal % 60;
+      final eH = eTotal ~/ 60; final eM = eTotal % 60;
+      widget.onDragAdd!(_selectedDay, sH, sM, eH, eM);
     }
-    setState(() { _isDragging = false; _dragStartH = -1; _dragEndH = -1; });
+    setState(() { _isDragging = false; _dragStartTotal = -1; _dragEndTotal = -1; });
   }
 
-  int _posToHour(Offset pos, Offset center) {
+  int _posToMinutes(Offset pos, Offset center) {
     final dx = pos.dx - center.dx, dy = pos.dy - center.dy;
     var angle = math.atan2(dy, dx) + math.pi / 2;
     if (angle < 0) angle += 2 * math.pi;
-    return ((angle / (2 * math.pi) * 24).floor() + _effectiveDayStartHour) % 24;
+    // 10분 단위 스냅
+    final raw = angle / (2 * math.pi) * 24 * 60;
+    final rounded = ((raw / 10).round() * 10) % (24 * 60);
+    return (rounded + _effectiveDayStartHour * 60) % (24 * 60);
   }
 }
 
@@ -375,7 +386,7 @@ class _CirclePainter extends CustomPainter {
   final int dayStartHour;
   final int totalSpanMinutes; // 보통 24*60, 익일 ON 시 24*60+N
   final bool showTimeLabels;
-  final int dragStartH, dragEndH;
+  final int dragStartTotal, dragEndTotal; // 분 단위
   final bool isDragging;
 
   _CirclePainter({
@@ -384,8 +395,8 @@ class _CirclePainter extends CustomPainter {
     required this.dayStartHour,
     required this.totalSpanMinutes,
     required this.showTimeLabels,
-    required this.dragStartH,
-    required this.dragEndH,
+    required this.dragStartTotal,
+    required this.dragEndTotal,
     required this.isDragging,
   });
 
@@ -414,11 +425,14 @@ class _CirclePainter extends CustomPainter {
       _drawArc(canvas, center, outerR, innerR, r, color, nextDayOffset: 24 * 60);
     }
 
-    // 드래그 미리보기
-    if (isDragging && dragStartH >= 0 && dragEndH >= 0) {
-      final s = dragStartH < dragEndH ? dragStartH : dragEndH;
-      final e = (dragStartH < dragEndH ? dragEndH : dragStartH) + 1;
-      final fakeR = Routine(id:'', label:'', days:[], startHour: s, endHour: e, colorIndex: 0, createdAt: DateTime.now());
+    // 드래그 미리보기 (10분 단위)
+    if (isDragging && dragStartTotal >= 0 && dragEndTotal >= 0) {
+      final sTotal = dragStartTotal < dragEndTotal ? dragStartTotal : dragEndTotal;
+      final eTotal = (dragStartTotal < dragEndTotal ? dragEndTotal : dragStartTotal) + 60;
+      final fakeR = Routine(id:'', label:'', days:[],
+        startHour: sTotal ~/ 60, startMinute: sTotal % 60,
+        endHour: eTotal ~/ 60, endMinute: eTotal % 60,
+        colorIndex: 0, createdAt: DateTime.now());
       _drawArc(canvas, center, outerR, innerR, fakeR, const Color(0xFF667eea).withAlpha(100), nextDayOffset: 0);
     }
   }
@@ -568,5 +582,5 @@ class _CirclePainter extends CustomPainter {
       o.routines != routines || o.nextDayRoutines != nextDayRoutines ||
       o.showTimeLabels != showTimeLabels || o.dayStartHour != dayStartHour ||
       o.totalSpanMinutes != totalSpanMinutes ||
-      o.dragStartH != dragStartH || o.dragEndH != dragEndH || o.isDragging != isDragging;
+      o.dragStartTotal != dragStartTotal || o.dragEndTotal != dragEndTotal || o.isDragging != isDragging;
 }

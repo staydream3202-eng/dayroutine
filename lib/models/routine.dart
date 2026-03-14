@@ -1,4 +1,4 @@
-// routine.dart v6 - startMinute, endMinute, customColor, crossMidnight 지원
+// routine.dart v9 - hideFromCalendar 필드 추가
 import 'package:flutter/material.dart';
 
 class Routine {
@@ -12,6 +12,7 @@ class Routine {
   final int colorIndex;
   final Color? customColor;
   final DateTime createdAt;
+  final bool hideFromCalendar; // v9: 달력에서 숨기기
 
   Routine({
     required this.id,
@@ -24,12 +25,11 @@ class Routine {
     required this.colorIndex,
     this.customColor,
     required this.createdAt,
+    this.hideFromCalendar = false,
   });
 
-  // 시작/종료를 분 단위로 변환 (편의 메서드)
   int get startTotal => startHour * 60 + startMinute;
   int get endTotal => endHour * 60 + endMinute;
-  // 자정 초과 여부
   bool get crossMidnight => endTotal > 0 && endTotal < startTotal;
 
   factory Routine.fromJson(Map<String, dynamic> json) {
@@ -44,6 +44,7 @@ class Routine {
       colorIndex: json['colorIndex'] ?? 0,
       customColor: json['customColor'] != null ? Color(json['customColor']) : null,
       createdAt: DateTime.parse(json['createdAt']),
+      hideFromCalendar: json['hideFromCalendar'] ?? false,
     );
   }
 
@@ -54,6 +55,7 @@ class Routine {
     'colorIndex': colorIndex,
     'customColor': customColor?.toARGB32(),
     'createdAt': createdAt.toIso8601String(),
+    'hideFromCalendar': hideFromCalendar,
   };
 
   Routine copyWith({
@@ -61,6 +63,7 @@ class Routine {
     int? startHour, int? endHour,
     int? startMinute, int? endMinute,
     int? colorIndex, Color? customColor, DateTime? createdAt,
+    bool? hideFromCalendar,
   }) {
     return Routine(
       id: id ?? this.id, label: label ?? this.label, days: days ?? this.days,
@@ -69,6 +72,7 @@ class Routine {
       colorIndex: colorIndex ?? this.colorIndex,
       customColor: customColor ?? this.customColor,
       createdAt: createdAt ?? this.createdAt,
+      hideFromCalendar: hideFromCalendar ?? this.hideFromCalendar,
     );
   }
 

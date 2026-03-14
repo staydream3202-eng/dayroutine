@@ -1,4 +1,4 @@
-// home_screen.dart v8.1
+// home_screen.dart v9
 // - To-do list 워딩 통일
 // - 로고 클릭 → 랜딩 이동
 // - 직접 설정 요일 한 줄 (모바일)
@@ -174,6 +174,37 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     for (final p in resolved) {
+      // 겹치는 일정 검사
+      final pStart = p.startHour * 60 + p.startMinute;
+      final pEnd = p.isAllDay ? 24 * 60 : p.endHour * 60 + p.endMinute;
+      bool hasConflict = false;
+      for (final day in p.days) {
+        for (final ex in _routines) {
+          if (!ex.days.contains(day)) continue;
+          if (pStart < ex.endTotal && ex.startTotal < pEnd) { hasConflict = true; break; }
+        }
+        if (hasConflict) break;
+      }
+      if (hasConflict && mounted) {
+        final go = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(children: [Icon(Icons.warning_amber, color: Colors.orange), SizedBox(width: 8), Text('일정 겹침', style: TextStyle(fontWeight: FontWeight.bold))]),
+            content: Text('"${p.label}" 일정이 기존 일정과 겹칩니다.\n그래도 등록할까요?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('취소')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('등록하기', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+        if (go != true) continue;
+      }
+
       // 하루종일 일정
       if (p.isAllDay) {
         final r = Routine(id: _uuid.v4(), label: p.label, days: p.days,
@@ -185,9 +216,10 @@ class _HomeScreenState extends State<HomeScreen> {
       // 익일 일정이면 격자형용으로 분리 저장
       if (p.crossMidnight) {
         // 오늘 부분 (startHour ~ 24)
+        final ci = _colorIndex % routineColors.length; // 두 분리 루틴 색상 통일
         final r1 = Routine(id: _uuid.v4(), label: p.label, days: p.days,
           startHour: p.startHour, endHour: 24, startMinute: p.startMinute, endMinute: 0,
-          colorIndex: _colorIndex % routineColors.length, createdAt: DateTime.now());
+          colorIndex: ci, createdAt: DateTime.now());
         await _storage.addRoutine(r1); _routines.add(r1); _colorIndex++;
 
         // 다음날 부분 (0 ~ endHour)
@@ -197,8 +229,8 @@ class _HomeScreenState extends State<HomeScreen> {
         }).toList();
         final r2 = Routine(id: _uuid.v4(), label: p.label, days: nextDays,
           startHour: 0, endHour: p.endHour, startMinute: 0, endMinute: p.endMinute,
-          colorIndex: _colorIndex % routineColors.length, createdAt: DateTime.now());
-        await _storage.addRoutine(r2); _routines.add(r2); _colorIndex++;
+          colorIndex: ci, createdAt: DateTime.now()); // 같은 ci 사용
+        await _storage.addRoutine(r2); _routines.add(r2);
       } else {
         final r = Routine(id: _uuid.v4(), label: p.label, days: p.days,
           startHour: p.startHour, endHour: p.endHour,
@@ -436,7 +468,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(child: DropdownButtonFormField<int>(
                         initialValue: endHour,
                         decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                        items: List.generate(25, (i) => DropdownMenuItem(value: i, child: Text(i == 24 ? '익일0시' : '$i시', style: const TextStyle(fontSize: 13)))),
+                        items: List.generate(37, (i) => DropdownMenuItem(value: i, child: Text(i == 0 ? '0시' : i < 24 ? '$i시' : '익일${i-24}시', style: const TextStyle(fontSize: 13)))),
                         onChanged: (v) => setM(() { endHour = v!; }),
                       )),
                       const SizedBox(width: 4),
@@ -485,8 +517,41 @@ class _HomeScreenState extends State<HomeScreen> {
                       return;
                     }
                     final isCross = endHour < startHour || (endHour == startHour && endMinute <= startMinute);
+                    // 겹치는 일정 검사
+                    final newStart = startHour * 60 + startMinute;
+                    final newEnd = isAllDay ? 24 * 60 : endHour * 60 + endMinute;
+                    bool hasConflict = false;
+                    for (final day in selDays) {
+                      for (final ex in _routines) {
+                        if (!ex.days.contains(day)) continue;
+                        if (newStart < ex.endTotal && ex.startTotal < newEnd) {
+                          hasConflict = true;
+                          break;
+                        }
+                      }
+                      if (hasConflict) break;
+                    }
+                    if (hasConflict && ctx.mounted) {
+                      final go = await showDialog<bool>(
+                        context: ctx,
+                        builder: (c) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: const Row(children: [Icon(Icons.warning_amber, color: Colors.orange), SizedBox(width: 8), Text('일정 겹침', style: TextStyle(fontWeight: FontWeight.bold))]),
+                          content: const Text('이 시간은 이미 일정이 등록되어 있어요.\n그래도 등록할까요?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('취소')),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text('등록하기', style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (go != true) return;
+                    }
                     if (isCross) {
-                      // 익일 분리
+                      // 익일 분리 - 같은 색상 사용
                       final r1 = Routine(id: _uuid.v4(), label: lbl, days: selDays,
                         startHour: startHour, endHour: 24, startMinute: startMinute, endMinute: 0,
                         colorIndex: selColor, createdAt: DateTime.now());
@@ -494,15 +559,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       final nextDays = selDays.map((d){ final idx=['월','화','수','목','금','토','일'].indexOf(d); return ['월','화','수','목','금','토','일'][(idx+1)%7]; }).toList();
                       final r2 = Routine(id: _uuid.v4(), label: lbl, days: nextDays,
                         startHour: 0, endHour: endHour, startMinute: 0, endMinute: endMinute,
-                        colorIndex: selColor, createdAt: DateTime.now());
-                      await _storage.addRoutine(r2); _routines.add(r2); _colorIndex++;
+                        colorIndex: selColor, createdAt: DateTime.now()); // 같은 색상
+                      await _storage.addRoutine(r2); _routines.add(r2);
                     } else {
                       final r = Routine(id: _uuid.v4(), label: lbl, days: selDays,
                         startHour: startHour, endHour: endHour, startMinute: startMinute, endMinute: endMinute,
                         colorIndex: selColor, createdAt: DateTime.now());
                       await _storage.addRoutine(r); _routines.add(r); _colorIndex++;
                     }
-                    setState(() {});
+                    setState(() { _routines = List.from(_routines); });
                     if (ctx.mounted) Navigator.pop(ctx);
                     _showSnack('일정 등록 완료 ✅');
                   },
@@ -525,6 +590,7 @@ class _HomeScreenState extends State<HomeScreen> {
     int startHour = r.startHour, startMinute = r.startMinute;
     int endHour = r.endHour, endMinute = r.endMinute;
     bool isAllDay = r.startHour == 0 && r.endHour == 24 && r.startMinute == 0 && r.endMinute == 0;
+    bool hideFromCalendar = r.hideFromCalendar;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true,
@@ -584,7 +650,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Expanded(child: DropdownButtonFormField<int>(
                       initialValue: endHour,
                       decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                      items: List.generate(25, (i) => DropdownMenuItem(value: i, child: Text(i == 24 ? '익일0시' : '$i시', style: const TextStyle(fontSize: 12)))),
+                      items: List.generate(37, (i) => DropdownMenuItem(value: i, child: Text(i == 0 ? '0시' : i < 24 ? '$i시' : '익일${i-24}시', style: const TextStyle(fontSize: 12)))),
                       onChanged: (v) => setM(() => endHour = v!),
                     )),
                     const SizedBox(width: 4),
@@ -619,7 +685,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(color: routineColors[i].bg, shape: BoxShape.circle,
                   border: i == selColor ? Border.all(color: Colors.black, width: 2.5) : null)),
             ))),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            // 달력 숨기기
+            Row(children: [
+              Checkbox(
+                value: hideFromCalendar,
+                activeColor: _themeColor,
+                onChanged: (v) => setM(() => hideFromCalendar = v ?? false),
+              ),
+              const Text('달력 스케줄에서 숨기기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            ]),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -634,6 +710,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     days: selDays.isEmpty ? r.days : selDays,
                     startHour: sh, startMinute: sm,
                     endHour: eh, endMinute: em, colorIndex: selColor,
+                    hideFromCalendar: hideFromCalendar,
                   ));
                   Navigator.pop(ctx);
                 },

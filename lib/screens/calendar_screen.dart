@@ -183,7 +183,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     // 시작 시간 기준 정렬, 익일 연속 루틴 제외
     final sortedRoutines = [...widget.routines]
-      ..removeWhere((r) => continuationIds.contains(r.id))
+      ..removeWhere((r) => continuationIds.contains(r.id) || r.hideFromCalendar)
       ..sort((a, b) => a.startTotal.compareTo(b.startTotal));
 
     // 각 루틴에 대해 이번 주의 연속 구간 찾기
