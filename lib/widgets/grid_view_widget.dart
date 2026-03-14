@@ -143,22 +143,58 @@ class GridViewWidget extends StatelessWidget {
     return widgets;
   }
 
+  // 익일로 이어지는 루틴의 연속 부분을 찾아 반환 (startHour>0일 때 사용)
+  Routine? _findContinuation(String nextDay, Routine todayPart) {
+    for (final c in routines) {
+      if (c.days.contains(nextDay) &&
+          c.label == todayPart.label &&
+          c.colorIndex == todayPart.colorIndex &&
+          c.startHour == 0 && c.startMinute == 0) {
+        return c;
+      }
+    }
+    return null;
+  }
+
   List<Widget> _buildBlocks(List<String> days, double rowH, double colW, double timeColW, int totalHours) {
     final widgets = <Widget>[];
+
+    // startHour>0일 때, 다음날 0시 시작 루틴 중 "합쳐진" 것들의 ID 수집
+    final mergedIds = <String>{};
+    if (startHour > 0) {
+      for (int di = 0; di < days.length; di++) {
+        final nextDay = days[(di + 1) % days.length];
+        for (final r in routines.where((r) => r.days.contains(days[di]) && r.endHour == 24 && r.endMinute == 0)) {
+          final cont = _findContinuation(nextDay, r);
+          if (cont != null) mergedIds.add(cont.id);
+        }
+      }
+    }
+
     for (int di = 0; di < days.length; di++) {
       final day = days[di];
-      final dayRoutines = routines.where((r) => r.days.contains(day)).toList();
+      final nextDay = days[(di + 1) % days.length];
+      final dayRoutines = routines.where((r) => r.days.contains(day) && !mergedIds.contains(r.id)).toList();
+
       for (final r in dayRoutines) {
         final color = r.customColor ?? routineColors[r.colorIndex % routineColors.length].bg;
         final textColor = r.customColor ?? routineColors[r.colorIndex % routineColors.length].text;
 
-        // startHour 기준 인덱스 변환 (분 단위 정밀)
         final sTotalMin = r.startHour * 60 + r.startMinute;
-        final eTotalMin = r.endHour * 60 + r.endMinute;
+        int eTotalMin = r.endHour * 60 + r.endMinute;
+
+        // startHour>0이고 오늘 부분이 24시에 끝나면 → 익일 연속 부분 찾아 합치기
+        if (startHour > 0 && r.endHour == 24 && r.endMinute == 0) {
+          final cont = _findContinuation(nextDay, r);
+          if (cont != null) {
+            eTotalMin = cont.endHour * 60 + cont.endMinute + 24 * 60;
+          }
+        }
+
         final startIdxMin = (sTotalMin - startHour * 60 + 24 * 60) % (24 * 60);
         final durationMin = r.crossMidnight
-            ? (24 * 60 - sTotalMin + eTotalMin)
-            : (eTotalMin - sTotalMin).clamp(10, 24 * 60);
+            ? (24 * 60 - sTotalMin + (r.endHour * 60 + r.endMinute))
+            : (eTotalMin - sTotalMin).clamp(10, 48 * 60);
 
         final top = startIdxMin / 60.0 * rowH;
         final height = (durationMin / 60.0 * rowH).clamp(rowH * 0.3, rowH * totalHours.toDouble());
@@ -187,7 +223,6 @@ class GridViewWidget extends StatelessWidget {
                           maxLines: height > rowH * 2 ? 3 : 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            // colW에 비례해 블록 텍스트 크기 조정
                             fontSize: (colW * 0.10 * fontSize).clamp(7.0, 14.0),
                             color: textColor,
                             fontWeight: FontWeight.w600,

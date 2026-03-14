@@ -1,4 +1,4 @@
-// parse_input.dart v7 - 종료 시간 오전/오후 불명확 체크 추가
+// parse_input.dart v7 - allDay 지원, 아침/저녁/낮 prefix, 다음날/담날 hasNextDay
 class ParsedRoutine {
   final List<String> days;
   final int startHour;
@@ -7,8 +7,9 @@ class ParsedRoutine {
   final int endMinute;
   final String label;
   final bool needsAmPmCheck;
-  final bool endNeedsAmPmCheck; // 종료 시간 오전/오후 불명확
+  final bool endNeedsAmPmCheck;
   final bool crossMidnight;
+  final bool isAllDay;
 
   const ParsedRoutine({
     required this.days,
@@ -20,6 +21,7 @@ class ParsedRoutine {
     this.needsAmPmCheck = false,
     this.endNeedsAmPmCheck = false,
     this.crossMidnight = false,
+    this.isAllDay = false,
   });
 }
 
@@ -36,19 +38,27 @@ const Map<String, int> _dayMap = {
   '매일': -1, '평일': -2, '주중': -2, '주말': -3,
 };
 
+// 하루종일 키워드
+const _allDayKeywords = [
+  '하루종일', '24시간', '풀타임', '하루 종일', '전체', '하루 전체',
+  '하루전체', '전부', '풀로', '온종일', '웬종일',
+];
+
 // 시간+분 파싱: "오후 2시 30분", "14:30", "2시반"
+// prefix 확장: 아침(→오전), 저녁(→오후), 낮(→오후 계열)
 final _rangeTimePattern = RegExp(
-  r'(오전|오후|새벽|낮|밤)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?\s*(?:부터|에서)?\s*(?:~|-)\s*(?:익일|다음날)?\s*(오전|오후|새벽|낮|밤)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?',
+  r'(오전|오후|새벽|낮|밤|아침|저녁)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?\s*(?:부터|에서)?\s*(?:~|-)\s*(?:익일|다음날|담날|다음\s*날)?\s*(오전|오후|새벽|낮|밤|아침|저녁)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?',
   caseSensitive: false,
 );
 final _fromToTimePattern = RegExp(
-  r'(오전|오후|새벽|낮|밤)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?\s*(?:부터|에서)\s*(?:익일|다음날)?\s*(오전|오후|새벽|낮|밤)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?',
+  r'(오전|오후|새벽|낮|밤|아침|저녁)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?\s*(?:부터|에서)\s*(?:익일|다음날|담날|다음\s*날)?\s*(오전|오후|새벽|낮|밤|아침|저녁)?\s*(\d{1,2})\s*시?\s*(?:(\d{1,2})\s*분?)?',
   caseSensitive: false,
 );
 final _singleTimePattern = RegExp(
-  r'(오전|오후|새벽|낮|밤)\s*(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분?)?|(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분?)?',
+  r'(오전|오후|새벽|낮|밤|아침|저녁)\s*(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분?)?|(\d{1,2})\s*시\s*(?:(\d{1,2})\s*분?)?',
   caseSensitive: false,
 );
+
 List<String> parseDays(String raw) {
   raw = raw.trim();
   if (_dayMap[raw] == -1 || raw == '매일') return List.from(_dayOrder);
@@ -93,8 +103,10 @@ int _tokenToDayIdx(String t) {
 
 int _applyAmPm(String prefix, int h) {
   final p = prefix.toLowerCase();
-  if ((p == '오후' || p == '밤') && h != 12) return h + 12;
-  if ((p == '오전' || p == '새벽') && h == 12) return 0;
+  // 오후 계열: 오후, 밤, 저녁, 낮 → PM
+  if ((p == '오후' || p == '밤' || p == '저녁' || p == '낮') && h != 12) return h + 12;
+  // 오전 계열: 오전, 새벽, 아침 → AM (12시는 0시로)
+  if ((p == '오전' || p == '새벽' || p == '아침') && h == 12) return 0;
   return h;
 }
 
@@ -128,15 +140,30 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
   seg = seg.trim();
   if (seg.isEmpty) return null;
 
-  final hasNextDay = seg.contains('익일') || seg.contains('다음날');
+  // ── 하루종일 키워드 감지 ──────────────────────────────────
+  for (final kw in _allDayKeywords) {
+    if (seg.contains(kw)) {
+      // 요일 추출
+      final segWithout = seg.replaceAll(kw, ' ').trim();
+      final days = _extractDays(segWithout, prev);
+      if (days == null || days.isEmpty) return null;
+      String label = _cleanLabel(segWithout, days);
+      if (label.isEmpty) label = '하루종일';
+      return [ParsedRoutine(days: days, startHour: 0, endHour: 24, label: label, isAllDay: true)];
+    }
+  }
+
+  final hasNextDay = seg.contains('익일') || seg.contains('다음날') ||
+      seg.contains('담날') || seg.contains('다음 날') || seg.contains('다음날');
 
   int startH = -1, endH = -1, startM = 0, endM = 0;
   bool ambig = false;
+  bool endAmbig = false;
   bool cross = false;
   String rem = seg;
 
   // HH:MM ~ HH:MM 형식 먼저 처리
-  final colonRangeReg = RegExp(r'(\d{1,2}):(\d{2})\s*(?:~|-|부터)\s*(?:익일|다음날)?\s*(\d{1,2}):(\d{2})');
+  final colonRangeReg = RegExp(r'(\d{1,2}):(\d{2})\s*(?:~|-|부터)\s*(?:익일|다음날|담날|다음\s*날)?\s*(\d{1,2}):(\d{2})');
   final colonRm = colonRangeReg.firstMatch(rem);
   if (colonRm != null) {
     startH = int.parse(colonRm.group(1)!); startM = _roundMinute(int.parse(colonRm.group(2)!));
@@ -144,8 +171,6 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
     cross = hasNextDay || (endH * 60 + endM < startH * 60 + startM);
     rem = rem.replaceFirst(colonRm.group(0)!, ' ').trim();
   }
-
-  bool endAmbig = false;
 
   if (startH == -1) {
     for (final pat in [_rangeTimePattern, _fromToTimePattern]) {
@@ -189,12 +214,25 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
 
   if (startH == -1) return null;
 
-  // 요일 추출
+  final days = _extractDays(rem, prev);
+  if (days == null || days.isEmpty) return null;
+
+  String label = _cleanLabel(rem, days);
+  if (label.isEmpty) label = '일정';
+
+  return [ParsedRoutine(
+    days: days, startHour: startH, endHour: endH,
+    startMinute: startM, endMinute: endM,
+    label: label, needsAmPmCheck: ambig, endNeedsAmPmCheck: endAmbig, crossMidnight: cross,
+  )];
+}
+
+// 요일 추출 (공통 함수)
+List<String>? _extractDays(String rem, ParsedRoutine? prev) {
   List<String>? days;
-  String? dayMatchStr;
 
   for (final kw in ['매일', '평일', '주중', '주말']) {
-    if (rem.contains(kw)) { days = parseDays(kw); dayMatchStr = kw; break; }
+    if (rem.contains(kw)) { days = parseDays(kw); break; }
   }
 
   if (days == null) {
@@ -205,18 +243,16 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
       if (si >= 0 && ei >= 0) {
         days = si <= ei ? [for (var i = si; i <= ei; i++) _dayOrder[i]]
             : [...[for(var i=si;i<7;i++) _dayOrder[i]],...[for(var i=0;i<=ei;i++) _dayOrder[i]]];
-        dayMatchStr = dm.group(0);
       }
     }
   }
 
-  // 쉼표·가운뎃점으로 구분된 요일: 월,화 / 월·화 / 월, 화, 수
   if (days == null) {
     final commaReg = RegExp(r'[가-힣]{1,4}(?:\s*[,·、]\s*[가-힣]{1,4})+');
     final cm = commaReg.firstMatch(rem);
     if (cm != null) {
       final parsed = parseDays(cm.group(0)!);
-      if (parsed.isNotEmpty) { days = parsed; dayMatchStr = cm.group(0); }
+      if (parsed.isNotEmpty) { days = parsed; }
     }
   }
 
@@ -224,25 +260,32 @@ List<ParsedRoutine>? _parseOneSeg(String seg, ParsedRoutine? prev) {
     final known = _dayMap.keys.where((k) => (_dayMap[k]??-99) >= 0).toList()
       ..sort((a, b) => b.length.compareTo(a.length));
     for (final k in known) {
-      if (rem.contains(k)) { days = [_dayOrder[_dayMap[k]!]]; dayMatchStr = k; break; }
+      if (rem.contains(k)) { days = [_dayOrder[_dayMap[k]!]]; break; }
     }
   }
 
-  if ((days == null || days.isEmpty) && hasNextDay && prev != null) {
-    days = prev.days.map((d) => _dayOrder[(_dayOrder.indexOf(d) + 1) % 7]).toList();
+  if ((days == null || days.isEmpty) && prev != null) {
+    days = prev.days;
   }
-  if (days == null || days.isEmpty) return null;
+  return days;
+}
 
+// 레이블 정리 (공통 함수)
+String _cleanLabel(String rem, List<String> days) {
+  // 요일 관련 문자 제거
+  final known = _dayMap.keys.where((k) => (_dayMap[k]??-99) >= 0).toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
   String label = rem;
-  if (dayMatchStr != null) label = label.replaceFirst(dayMatchStr, '');
+  for (final k in [...['매일', '평일', '주중', '주말'], ...known]) {
+    label = label.replaceAll(k, '');
+  }
+  // 하루종일 키워드 제거
+  for (final kw in _allDayKeywords) {
+    label = label.replaceAll(kw, '');
+  }
   label = label.replaceAll('부터', '').replaceAll('에서', '').replaceAll('까지', '')
-      .replaceAll('익일', '').replaceAll('다음날', '').replaceAll('~', '')
+      .replaceAll('익일', '').replaceAll('다음날', '').replaceAll('담날', '')
+      .replaceAll('다음 날', '').replaceAll('~', '')
       .replaceAll(RegExp(r'\s{2,}'), ' ').trim();
-  if (label.isEmpty) label = '일정';
-
-  return [ParsedRoutine(
-    days: days, startHour: startH, endHour: endH,
-    startMinute: startM, endMinute: endM,
-    label: label, needsAmPmCheck: ambig, endNeedsAmPmCheck: endAmbig, crossMidnight: cross,
-  )];
+  return label;
 }

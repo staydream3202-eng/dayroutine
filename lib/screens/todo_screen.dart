@@ -1,8 +1,7 @@
-// todo_screen.dart v7
-// - 하루 시작 / 하루 끝 버튼
-// - 하루 끝 클릭 시 달성률 애니메이션 오버레이
-// - 저장하고 자랑하기 (이미지 저장)
-// - 하루 기준: 버튼 클릭 시간 기준, 누락 시 당일 시간표 마지막 시간 기준
+// todo_screen.dart v7.1
+// - 당일 요일 루틴만 자동 연동
+// - resetToken: 초기화 시 상태 재로딩
+// - _syncRoutines: 삭제된 루틴 todo도 제거
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:ui' as ui;
@@ -16,7 +15,8 @@ import '../services/storage_service.dart';
 class TodoScreen extends StatefulWidget {
   final List<Routine> routines;
   final Color themeColor;
-  const TodoScreen({super.key, required this.routines, required this.themeColor});
+  final int resetToken;
+  const TodoScreen({super.key, required this.routines, required this.themeColor, this.resetToken = 0});
   @override
   State<TodoScreen> createState() => _TodoScreenState();
 }
@@ -36,6 +36,9 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
 
   late AnimationController _achieveCtrl;
   late Animation<double> _achieveAnim;
+
+  static const _wdNames = ['월', '화', '수', '목', '금', '토', '일'];
+  String get _todayWd => _wdNames[DateTime.now().weekday - 1];
 
   String get _todayKey {
     final now = DateTime.now();
@@ -58,7 +61,11 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(covariant TodoScreen old) {
     super.didUpdateWidget(old);
-    if (old.routines != widget.routines) _syncRoutines();
+    if (old.resetToken != widget.resetToken) {
+      _reload();
+    } else if (old.routines != widget.routines) {
+      _syncRoutines();
+    }
   }
 
   @override
@@ -68,8 +75,12 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  Future<void> _reload() async {
+    setState(() { _todos = []; _loading = true; _dayStartTime = null; _dayEndTime = null; });
+    await _load();
+  }
+
   Future<void> _load() async {
-    // 하루 세션 로드
     final session = await _storage.getDaySession(_todayKey);
     if (session != null) {
       _dayStartTime = session['startTime'] != null ? DateTime.tryParse(session['startTime']) : null;
@@ -78,12 +89,15 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
 
     final saved = await _storage.getTodos(_dateKey);
     final existingIds = saved.where((t) => t.isRoutineBased).map((t) => t.routineId).toSet();
+
+    // 당일 요일 루틴만 연동
+    final todayRoutines = widget.routines.where((r) => r.days.contains(_todayWd)).toList();
     final newTodos = <TodoItem>[...saved];
-    for (final r in widget.routines) {
+    for (final r in todayRoutines) {
       if (!existingIds.contains(r.id)) {
         newTodos.add(TodoItem(
           id: _uuid.v4(),
-          label: '${r.label}  ${r.timeLabel}  (${r.days.join('·')})',
+          label: '${r.label}  ${r.timeLabel}',
           isDone: false, isRoutineBased: true, routineId: r.id,
         ));
       }
@@ -93,19 +107,26 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _syncRoutines() async {
+    final currentIds = widget.routines.map((r) => r.id).toSet();
+    final todayRoutines = widget.routines.where((r) => r.days.contains(_todayWd)).toList();
+
+    // 삭제된 루틴의 todo 제거
+    _todos.removeWhere((t) => t.isRoutineBased && t.routineId != null && !currentIds.contains(t.routineId));
+
+    // 새 당일 루틴 추가
     final existingIds = _todos.where((t) => t.isRoutineBased).map((t) => t.routineId).toSet();
     bool changed = false;
-    for (final r in widget.routines) {
+    for (final r in todayRoutines) {
       if (!existingIds.contains(r.id)) {
         _todos.add(TodoItem(
           id: _uuid.v4(),
-          label: '${r.label}  ${r.timeLabel}  (${r.days.join('·')})',
+          label: '${r.label}  ${r.timeLabel}',
           isDone: false, isRoutineBased: true, routineId: r.id,
         ));
         changed = true;
       }
     }
-    if (changed) {
+    if (changed || currentIds.length != _todos.where((t) => t.isRoutineBased).length) {
       setState(() {});
       await _storage.saveTodos(_dateKey, _todos);
     }
@@ -168,20 +189,14 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── 하루 시작 ────────────────────────────────────────────────
   Future<void> _startDay() async {
     final now = DateTime.now();
     setState(() => _dayStartTime = now);
-    await _storage.saveDaySession(_todayKey, {
-      'startTime': now.toIso8601String(),
-      'endTime': null,
-    });
+    await _storage.saveDaySession(_todayKey, {'startTime': now.toIso8601String(), 'endTime': null});
   }
 
-  // ── 하루 끝 ──────────────────────────────────────────────────
   Future<void> _endDay() async {
     final now = DateTime.now();
-    // 시작 버튼 누락 시: 당일 시간표 가장 이른 시작시간을 폴백으로 사용
     final effectiveStart = _dayStartTime ?? _getFallbackStartTime();
     setState(() { _dayStartTime = effectiveStart; _dayEndTime = now; _showAchievement = true; });
     await _storage.saveDaySession(_todayKey, {
@@ -192,18 +207,14 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     _achieveCtrl.forward();
   }
 
-  // 시간표 마지막 시간 기준 폴백 (당일 가장 늦게 끝나는 루틴의 시작 시간)
   DateTime _getFallbackStartTime() {
-    final wdNames = ['월', '화', '수', '목', '금', '토', '일'];
-    final todayWd = wdNames[DateTime.now().weekday - 1];
-    final todayRoutines = widget.routines.where((r) => r.days.contains(todayWd)).toList();
+    final todayRoutines = widget.routines.where((r) => r.days.contains(_todayWd)).toList();
     if (todayRoutines.isEmpty) return DateTime.now();
     final latest = todayRoutines.reduce((a, b) => a.endTotal > b.endTotal ? a : b);
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day, latest.endHour, latest.endMinute);
   }
 
-  // ── 이미지 저장 ──────────────────────────────────────────────
   Future<void> _saveAchievementImage() async {
     if (_savingImage) return;
     setState(() => _savingImage = true);
@@ -247,7 +258,6 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
           _buildHeader(),
           _buildInput(),
           const SizedBox(height: 8),
-          // 하루 미시작 시 배너로 노출 (목록은 항상 표시)
           if (_dayStartTime == null) _buildStartDayBanner(),
           Expanded(child: _buildTodoList()),
           if (_dayStartTime != null && _dayEndTime == null) _buildEndDayButton(),
@@ -433,15 +443,10 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     final endLabel = '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
 
     final String message;
-    if (progress == 1.0) {
-      message = '🎉 완벽한 하루였어요!';
-    } else if (progress >= 0.7) {
-      message = '👏 훌륭한 하루였어요!';
-    } else if (progress >= 0.4) {
-      message = '💪 잘 하셨어요!';
-    } else {
-      message = '🌱 내일도 파이팅!';
-    }
+    if (progress == 1.0) message = '🎉 완벽한 하루였어요!';
+    else if (progress >= 0.7) message = '👏 훌륭한 하루였어요!';
+    else if (progress >= 0.4) message = '💪 잘 하셨어요!';
+    else message = '🌱 내일도 파이팅!';
 
     return Container(
       color: Colors.black.withAlpha(160),
@@ -450,18 +455,13 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height - 80),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            // 달성률 카드 (이미지 저장 영역)
             RepaintBoundary(
               key: _repaintKey,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                ),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28)),
                 child: Column(children: [
-                  // 로고
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Container(
                       width: 26, height: 26,
@@ -478,8 +478,6 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                   Text(dateLabel, style: TextStyle(fontSize: 13, color: Colors.grey[500])),
                   Text('$startLabel ~ $endLabel', style: TextStyle(fontSize: 12, color: Colors.grey[400])),
                   const SizedBox(height: 24),
-
-                  // 원형 달성률 애니메이션
                   AnimatedBuilder(
                     animation: _achieveAnim,
                     builder: (ctx, _) {
@@ -490,31 +488,25 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                           SizedBox(
                             width: 160, height: 160,
                             child: CircularProgressIndicator(
-                              value: animProgress,
-                              strokeWidth: 14,
+                              value: animProgress, strokeWidth: 14,
                               backgroundColor: Colors.grey[100],
                               valueColor: AlwaysStoppedAnimation(widget.themeColor),
                               strokeCap: StrokeCap.round,
                             ),
                           ),
                           Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            Text(
-                              '${(animProgress * 100).round()}%',
-                              style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: widget.themeColor),
-                            ),
+                            Text('${(animProgress * 100).round()}%',
+                              style: TextStyle(fontSize: 36, fontWeight: FontWeight.bold, color: widget.themeColor)),
                             Text('달성', style: TextStyle(fontSize: 13, color: Colors.grey[500])),
                           ]),
                         ]),
                       );
                     },
                   ),
-
                   const SizedBox(height: 18),
                   Text(message, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   Text('$done / $total 완료', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-
-                  // 투두 요약
                   if (_todos.isNotEmpty) ...[
                     const SizedBox(height: 20),
                     Container(
@@ -525,38 +517,27 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                         ..._todos.take(6).map((t) => Padding(
                           padding: const EdgeInsets.symmetric(vertical: 3),
                           child: Row(children: [
-                            Icon(
-                              t.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                              size: 15, color: t.isDone ? widget.themeColor : Colors.grey[300],
-                            ),
+                            Icon(t.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                              size: 15, color: t.isDone ? widget.themeColor : Colors.grey[300]),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(
-                              t.label,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: t.isDone ? Colors.grey[600] : Colors.grey[400],
-                                decoration: t.isDone ? TextDecoration.lineThrough : null,
-                                decorationColor: Colors.grey[400],
-                              ),
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                            )),
+                            Expanded(child: Text(t.label, style: TextStyle(
+                              fontSize: 12,
+                              color: t.isDone ? Colors.grey[600] : Colors.grey[400],
+                              decoration: t.isDone ? TextDecoration.lineThrough : null,
+                              decorationColor: Colors.grey[400],
+                            ), maxLines: 1, overflow: TextOverflow.ellipsis)),
                           ]),
                         )),
                         if (_todos.length > 6)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text('외 ${_todos.length - 6}개 더', style: TextStyle(fontSize: 11, color: Colors.grey[400])),
-                          ),
+                          Padding(padding: const EdgeInsets.only(top: 4),
+                            child: Text('외 ${_todos.length - 6}개 더', style: TextStyle(fontSize: 11, color: Colors.grey[400]))),
                       ]),
                     ),
                   ],
                 ]),
               ),
             ),
-
             const SizedBox(height: 20),
-
-            // 저장하고 자랑하기
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -586,7 +567,6 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
 
   Widget _sectionLabel(String label, int count) => Padding(
     padding: const EdgeInsets.only(bottom: 8),

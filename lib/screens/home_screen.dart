@@ -1,11 +1,14 @@
-// home_screen.dart v6
+// home_screen.dart v7
 // - To-do list 워딩 통일
 // - 로고 클릭 → 랜딩 이동
 // - 직접 설정 요일 한 줄 (모바일)
-// - 익일 팝업 안내
+// - 익일 팝업 안내 (첫 1회)
 // - 이미지 저장 전체 캡처
 // - 10분 단위 등록
 // - 원형 드래그 + circleLabel 연동
+// - 하루종일 등록 지원
+// - perDaySleep+useWakeHourAsStart → 격자 0시 고정, 원형 요일별 기상시간 적용
+// - resetToken: 전체 초기화 시 TodoScreen 강제 리로드
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:ui' as ui;
@@ -44,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _errorText;
   int _tabIndex = 0;
   int _viewIndex = 0; // 0=격자, 1=원형
+  int _todoResetToken = 0;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -69,10 +73,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final defaultSleep = {for (final d in ['월','화','수','목','금','토','일']) d: SleepSchedule()};
     final resetSettings = _settings.copyWith(scheduleLibrary: [], sleepByDay: defaultSleep);
     await _storage.saveSettings(resetSettings);
-    setState(() { _routines = []; _colorIndex = 0; _settings = resetSettings; });
+    setState(() { _routines = []; _colorIndex = 0; _settings = resetSettings; _todoResetToken++; });
   }
 
   int get _wakeHour => _settings.useWakeHourAsStart ? _settings.defaultWakeHour : 0;
+  // perDaySleep + useWakeHourAsStart → 격자는 0시 고정
+  int get _gridStartHour => (_settings.perDaySleep && _settings.useWakeHourAsStart) ? 0 : _wakeHour;
+  // perDaySleep + useWakeHourAsStart → 원형에 요일별 기상시간 전달
+  Map<String, int>? get _wakeHoursByDay {
+    if (!_settings.perDaySleep || !_settings.useWakeHourAsStart) return null;
+    return _settings.sleepByDay.map((k, v) => MapEntry(k, v.wakeHour));
+  }
   Color get _themeColor => Color(int.parse(_settings.themeColor));
 
   // ── 자연어 입력 ──────────────────────────────────────────────
@@ -161,6 +172,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     for (final p in resolved) {
+      // 하루종일 일정
+      if (p.isAllDay) {
+        final r = Routine(id: _uuid.v4(), label: p.label, days: p.days,
+          startHour: 0, endHour: 24, startMinute: 0, endMinute: 0,
+          colorIndex: _colorIndex % routineColors.length, createdAt: DateTime.now());
+        await _storage.addRoutine(r); _routines.add(r); _colorIndex++;
+        continue;
+      }
       // 익일 일정이면 격자형용으로 분리 저장
       if (p.crossMidnight) {
         // 오늘 부분 (startHour ~ 24)
@@ -196,7 +215,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showNextDayPopup() {
+  Future<void> _showNextDayPopup() async {
+    final shown = await _storage.getTipShown('nextday');
+    if (shown || !mounted) return;
+    await _storage.setTipShown('nextday');
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -273,6 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
     List<String> selDays = [];
     int startHour = 0, startMinute = 0, endHour = 1, endMinute = 0;
     int selColor = _colorIndex % routineColors.length;
+    bool isAllDay = false;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true,
@@ -316,49 +340,64 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 12),
-              // 시작 시간 (시+분)
+              const SizedBox(height: 8),
+              // 하루종일 체크박스
               Row(children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('시작 시간', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Expanded(child: DropdownButtonFormField<int>(
-                      initialValue: startHour,
-                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                      items: List.generate(24, (i) => DropdownMenuItem(value: i, child: Text('$i시', style: const TextStyle(fontSize: 13)))),
-                      onChanged: (v) => setM(() { startHour = v!; }),
-                    )),
-                    const SizedBox(width: 4),
-                    Expanded(child: DropdownButtonFormField<int>(
-                      initialValue: startMinute,
-                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                      items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 13)))).toList(),
-                      onChanged: (v) => setM(() => startMinute = v!),
-                    )),
-                  ]),
-                ])),
-                const SizedBox(width: 8),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('종료 시간', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Expanded(child: DropdownButtonFormField<int>(
-                      initialValue: endHour,
-                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                      items: List.generate(25, (i) => DropdownMenuItem(value: i, child: Text(i == 24 ? '익일0시' : '$i시', style: const TextStyle(fontSize: 13)))),
-                      onChanged: (v) => setM(() { endHour = v!; }),
-                    )),
-                    const SizedBox(width: 4),
-                    Expanded(child: DropdownButtonFormField<int>(
-                      initialValue: endMinute,
-                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                      items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 13)))).toList(),
-                      onChanged: (v) => setM(() => endMinute = v!),
-                    )),
-                  ]),
-                ])),
+                Checkbox(
+                  value: isAllDay,
+                  activeColor: _themeColor,
+                  onChanged: (v) => setM(() {
+                    isAllDay = v ?? false;
+                    if (isAllDay) { startHour = 0; startMinute = 0; endHour = 24; endMinute = 0; }
+                  }),
+                ),
+                const Text('하루종일', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
               ]),
+              if (!isAllDay) ...[
+                const SizedBox(height: 4),
+                // 시작 시간 (시+분)
+                Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('시작 시간', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Expanded(child: DropdownButtonFormField<int>(
+                        initialValue: startHour,
+                        decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                        items: List.generate(24, (i) => DropdownMenuItem(value: i, child: Text('$i시', style: const TextStyle(fontSize: 13)))),
+                        onChanged: (v) => setM(() { startHour = v!; }),
+                      )),
+                      const SizedBox(width: 4),
+                      Expanded(child: DropdownButtonFormField<int>(
+                        initialValue: startMinute,
+                        decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                        items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 13)))).toList(),
+                        onChanged: (v) => setM(() => startMinute = v!),
+                      )),
+                    ]),
+                  ])),
+                  const SizedBox(width: 8),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('종료 시간', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Expanded(child: DropdownButtonFormField<int>(
+                        initialValue: endHour,
+                        decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                        items: List.generate(25, (i) => DropdownMenuItem(value: i, child: Text(i == 24 ? '익일0시' : '$i시', style: const TextStyle(fontSize: 13)))),
+                        onChanged: (v) => setM(() { endHour = v!; }),
+                      )),
+                      const SizedBox(width: 4),
+                      Expanded(child: DropdownButtonFormField<int>(
+                        initialValue: endMinute,
+                        decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                        items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 13)))).toList(),
+                        onChanged: (v) => setM(() => endMinute = v!),
+                      )),
+                    ]),
+                  ])),
+                ]),
+              ],
               const SizedBox(height: 12),
               const Text('색상', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
@@ -381,6 +420,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     final lbl = labelCtrl.text.trim();
                     if (lbl.isEmpty || selDays.isEmpty) {
                       ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('이름과 요일을 입력해주세요'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+                      return;
+                    }
+                    if (isAllDay) {
+                      final r = Routine(id: _uuid.v4(), label: lbl, days: selDays,
+                        startHour: 0, endHour: 24, startMinute: 0, endMinute: 0,
+                        colorIndex: selColor, createdAt: DateTime.now());
+                      await _storage.addRoutine(r); _routines.add(r); _colorIndex++;
+                      setState(() {});
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _showSnack('일정 등록 완료 ✅');
                       return;
                     }
                     final isCross = endHour < startHour || (endHour == startHour && endMinute <= startMinute);
@@ -423,6 +472,7 @@ class _HomeScreenState extends State<HomeScreen> {
     List<String> selDays = List.from(r.days);
     int startHour = r.startHour, startMinute = r.startMinute;
     int endHour = r.endHour, endMinute = r.endMinute;
+    bool isAllDay = r.startHour == 0 && r.endHour == 24 && r.startMinute == 0 && r.endMinute == 0;
 
     showModalBottomSheet(
       context: context, isScrollControlled: true,
@@ -439,48 +489,63 @@ class _HomeScreenState extends State<HomeScreen> {
             ]),
             const SizedBox(height: 12),
             TextField(controller: labelCtrl, decoration: InputDecoration(labelText: '일정 이름', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
+            // 하루종일 체크박스
             Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('시작', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Row(children: [
-                  Expanded(child: DropdownButtonFormField<int>(
-                    initialValue: startHour,
-                    decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                    items: List.generate(24, (i) => DropdownMenuItem(value: i, child: Text('$i시', style: const TextStyle(fontSize: 12)))),
-                    onChanged: (v) => setM(() => startHour = v!),
-                  )),
-                  const SizedBox(width: 4),
-                  Expanded(child: DropdownButtonFormField<int>(
-                    initialValue: startMinute,
-                    decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                    items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 12)))).toList(),
-                    onChanged: (v) => setM(() => startMinute = v!),
-                  )),
-                ]),
-              ])),
-              const SizedBox(width: 8),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('종료', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Row(children: [
-                  Expanded(child: DropdownButtonFormField<int>(
-                    initialValue: endHour,
-                    decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                    items: List.generate(25, (i) => DropdownMenuItem(value: i, child: Text(i == 24 ? '익일0시' : '$i시', style: const TextStyle(fontSize: 12)))),
-                    onChanged: (v) => setM(() => endHour = v!),
-                  )),
-                  const SizedBox(width: 4),
-                  Expanded(child: DropdownButtonFormField<int>(
-                    initialValue: endMinute,
-                    decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-                    items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 12)))).toList(),
-                    onChanged: (v) => setM(() => endMinute = v!),
-                  )),
-                ]),
-              ])),
+              Checkbox(
+                value: isAllDay,
+                activeColor: _themeColor,
+                onChanged: (v) => setM(() {
+                  isAllDay = v ?? false;
+                  if (isAllDay) { startHour = 0; startMinute = 0; endHour = 24; endMinute = 0; }
+                }),
+              ),
+              const Text('하루종일', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             ]),
+            if (!isAllDay) ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('시작', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Expanded(child: DropdownButtonFormField<int>(
+                      initialValue: startHour,
+                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                      items: List.generate(24, (i) => DropdownMenuItem(value: i, child: Text('$i시', style: const TextStyle(fontSize: 12)))),
+                      onChanged: (v) => setM(() => startHour = v!),
+                    )),
+                    const SizedBox(width: 4),
+                    Expanded(child: DropdownButtonFormField<int>(
+                      initialValue: startMinute,
+                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                      items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 12)))).toList(),
+                      onChanged: (v) => setM(() => startMinute = v!),
+                    )),
+                  ]),
+                ])),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('종료', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Expanded(child: DropdownButtonFormField<int>(
+                      initialValue: endHour,
+                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                      items: List.generate(25, (i) => DropdownMenuItem(value: i, child: Text(i == 24 ? '익일0시' : '$i시', style: const TextStyle(fontSize: 12)))),
+                      onChanged: (v) => setM(() => endHour = v!),
+                    )),
+                    const SizedBox(width: 4),
+                    Expanded(child: DropdownButtonFormField<int>(
+                      initialValue: endMinute,
+                      decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                      items: [0,10,20,30,40,50].map((m) => DropdownMenuItem(value: m, child: Text('$m분', style: const TextStyle(fontSize: 12)))).toList(),
+                      onChanged: (v) => setM(() => endMinute = v!),
+                    )),
+                  ]),
+                ])),
+              ]),
+            ],
             const SizedBox(height: 10),
             const Text('요일', style: TextStyle(fontWeight: FontWeight.w600)),
             Row(children: allDays.map((d) {
@@ -508,11 +573,15 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: _themeColor, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: () {
+                  final sh = isAllDay ? 0 : startHour;
+                  final sm = isAllDay ? 0 : startMinute;
+                  final eh = isAllDay ? 24 : endHour;
+                  final em = isAllDay ? 0 : endMinute;
                   _updateRoutine(r.copyWith(
                     label: labelCtrl.text.trim().isEmpty ? r.label : labelCtrl.text.trim(),
                     days: selDays.isEmpty ? r.days : selDays,
-                    startHour: startHour, startMinute: startMinute,
-                    endHour: endHour, endMinute: endMinute, colorIndex: selColor,
+                    startHour: sh, startMinute: sm,
+                    endHour: eh, endMinute: em, colorIndex: selColor,
                   ));
                   Navigator.pop(ctx);
                 },
@@ -590,7 +659,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _buildScheduleTab(),
           CalendarScreen(routines: _routines, onTap: _showEditModal),
-          TodoScreen(routines: _routines, themeColor: _themeColor),
+          TodoScreen(routines: _routines, themeColor: _themeColor, resetToken: _todoResetToken),
           SettingsScreen(
             settings: _settings, routines: _routines,
             onChanged: _saveSettings, onRoutinesChanged: _replaceRoutines, onFullReset: _fullReset,
@@ -713,10 +782,12 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Container(
             color: const Color(0xFFF8F9FF),
             child: _viewIndex == 0
-                ? GridViewWidget(routines: _routines, onTap: _showEditModal, fontSize: _settings.fontSize, startHour: _wakeHour)
+                ? GridViewWidget(routines: _routines, onTap: _showEditModal, fontSize: _settings.fontSize, startHour: _gridStartHour)
                 : CircleViewWidget(
                     routines: _routines, dayStartHour: _wakeHour,
                     circleLabel: _settings.circleLabel,
+                    useWakeHourAsStart: _settings.useWakeHourAsStart,
+                    wakeHoursByDay: _wakeHoursByDay,
                     onDragAdd: _onDragAdd,
                     onLabelChanged: (newLabel) => _saveSettings(_settings.copyWith(circleLabel: newLabel)),
                   ),

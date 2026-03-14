@@ -162,8 +162,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // 이번 주 요일 문자열
     final wdNames = ['월', '화', '수', '목', '금', '토', '일'];
 
+    // 시작 시간 기준 정렬
+    final sortedRoutines = [...widget.routines]..sort((a, b) => a.startTotal.compareTo(b.startTotal));
+
     // 각 루틴에 대해 이번 주의 연속 구간 찾기
-    for (final r in widget.routines) {
+    for (final r in sortedRoutines) {
       // 이번 주에서 이 루틴이 포함된 컬럼들
       final matchCols = <int>[];
       for (int col = 0; col < 7; col++) {

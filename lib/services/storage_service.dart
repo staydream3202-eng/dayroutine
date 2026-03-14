@@ -96,4 +96,14 @@ class StorageService {
       }
     }
   }
+
+  Future<bool> getTipShown(String tipKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('tip_$tipKey') ?? false;
+  }
+
+  Future<void> setTipShown(String tipKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tip_$tipKey', true);
+  }
 }

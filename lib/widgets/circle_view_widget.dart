@@ -1,11 +1,8 @@
-// circle_view_widget.dart v6
-// - 상단 요일 탭만 표시 (필터칩 제거)
-// - 기본값: 오늘 요일 자동 선택 (클릭 안 된 상태가 기본 → 오늘 요일 하이라이트만)
-// - 시간 표시 토글 (1시간 단위)
-// - 중앙 텍스트 클릭 편집/삭제
-// - 일정 이름 모두 표시
-// - 자정 초과 일정 연속 띠
-// - 요일 탭+배경색 통일
+// circle_view_widget.dart v7.1
+// - 중앙 연필 아이콘 삭제
+// - 익일 표시 버튼 (기상 시간 기준 사용 시 숨김)
+// - wakeHoursByDay: 요일별 개별 기상 시간 지원
+// - 기상 시간 기준 타임라인 회전 + 볼드 위치 고정
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/routine.dart';
@@ -15,6 +12,8 @@ class CircleViewWidget extends StatefulWidget {
   final List<Routine> routines;
   final int dayStartHour;
   final String circleLabel;
+  final bool useWakeHourAsStart;
+  final Map<String, int>? wakeHoursByDay; // 요일별 기상 시간 (perDaySleep 시)
   final void Function(String day, int startH, int startM, int endH, int endM)? onDragAdd;
   final void Function(String newLabel)? onLabelChanged;
 
@@ -23,6 +22,8 @@ class CircleViewWidget extends StatefulWidget {
     required this.routines,
     this.dayStartHour = 0,
     this.circleLabel = '',
+    this.useWakeHourAsStart = false,
+    this.wakeHoursByDay,
     this.onDragAdd,
     this.onLabelChanged,
   });
@@ -38,20 +39,101 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
   bool _isDragging = false;
   int _dragStartH = -1, _dragEndH = -1;
 
+  // 익일 표시
+  bool _nextDayEnabled = false;
+  int? _nextDayEndTotal; // 익일 마지막 루틴의 endTotal (분, 0~24*60)
+
   @override
   void initState() {
     super.initState();
-    // 기본값: 오늘 요일
     final wdMap = {1:'월',2:'화',3:'수',4:'목',5:'금',6:'토',7:'일'};
     _selectedDay = wdMap[DateTime.now().weekday] ?? '월';
   }
 
+  // 현재 선택 요일의 실질 기상 시간
+  int get _effectiveDayStartHour {
+    if (widget.wakeHoursByDay != null) {
+      return widget.wakeHoursByDay![_selectedDay] ?? 0;
+    }
+    return widget.dayStartHour;
+  }
+
+  // 익일 표시 버튼 노출 여부
+  bool get _showNextDayButton => !widget.useWakeHourAsStart;
+
+  // 익일 표시 ON 시 총 시간 범위(분)
+  int get _totalSpanMinutes =>
+      (_nextDayEnabled && _nextDayEndTotal != null && _nextDayEndTotal! > 0)
+          ? 24 * 60 + _nextDayEndTotal!
+          : 24 * 60;
+
   Color get _bg => const Color(0xFFF0F2FF);
+
+  void _onDaySelected(String d) {
+    setState(() {
+      _selectedDay = d;
+      // 요일 바꾸면 익일 표시 리셋
+      _nextDayEnabled = false;
+      _nextDayEndTotal = null;
+    });
+  }
+
+  Future<void> _onNextDayToggle(bool value) async {
+    if (!value) {
+      setState(() { _nextDayEnabled = false; _nextDayEndTotal = null; });
+      return;
+    }
+    // 다음 요일 루틴 목록
+    final nextDayName = _days[(_days.indexOf(_selectedDay) + 1) % 7];
+    final nextDayRoutines = widget.routines
+        .where((r) => r.days.contains(nextDayName))
+        .toList()
+      ..sort((a, b) => a.endTotal.compareTo(b.endTotal));
+
+    if (nextDayRoutines.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('다음 날에 등록된 일정이 없습니다'), behavior: SnackBarBehavior.floating),
+      );
+      return;
+    }
+
+    final selected = await showDialog<Routine>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('오늘의 마지막 일정을 선택해주세요',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        content: SizedBox(
+          width: 300,
+          child: ListView(
+            shrinkWrap: true,
+            children: nextDayRoutines.map((r) {
+              final color = r.customColor ?? routineColors[r.colorIndex % routineColors.length].bg;
+              return ListTile(
+                leading: Container(width: 12, height: 12,
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                title: Text(r.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: Text('익일 ${r.timeLabel}', style: const TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, r),
+              );
+            }).toList(),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소'))],
+      ),
+    );
+
+    if (selected == null) return;
+    setState(() {
+      _nextDayEnabled = true;
+      _nextDayEndTotal = selected.endTotal;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(children: [
-      // ── 요일 탭 (배경색 통일) ──
+      // ── 요일 탭 ──
       Container(
         color: _bg,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
@@ -64,7 +146,7 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
             })();
             return Expanded(
               child: GestureDetector(
-                onTap: () => setState(() => _selectedDay = d),
+                onTap: () => _onDaySelected(d),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 160),
                   margin: const EdgeInsets.symmetric(horizontal: 2),
@@ -73,15 +155,12 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
                     color: isSel ? const Color(0xFF667eea) : isToday ? const Color(0xFF667eea).withAlpha(30) : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(
-                    d,
-                    textAlign: TextAlign.center,
+                  child: Text(d, textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: isSel || isToday ? FontWeight.bold : FontWeight.normal,
                       color: isSel ? Colors.white : isToday ? const Color(0xFF667eea) : Colors.grey[600],
-                    ),
-                  ),
+                    )),
                 ),
               ),
             );
@@ -89,11 +168,27 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
         ),
       ),
 
-      // ── 시간 표시 토글 ──
+      // ── 토글 행 (시간 표시 + 익일 표시) ──
       Container(
         color: _bg,
-        padding: const EdgeInsets.only(bottom: 6, right: 12),
-        child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+        padding: const EdgeInsets.only(bottom: 6, left: 12, right: 12),
+        child: Row(children: [
+          // 익일 표시 버튼
+          if (_showNextDayButton) ...[
+            Text('익일 표시', style: TextStyle(fontSize: 11, color: _nextDayEnabled ? const Color(0xFF667eea) : Colors.grey[500])),
+            const SizedBox(width: 2),
+            Transform.scale(
+              scale: 0.75,
+              child: Switch(
+                value: _nextDayEnabled,
+                activeThumbColor: const Color(0xFF667eea),
+                onChanged: _onNextDayToggle,
+              ),
+            ),
+            const Spacer(),
+          ] else
+            const Spacer(),
+          // 시간 표시
           Text('시간 표시', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           const SizedBox(width: 4),
           Transform.scale(
@@ -112,10 +207,19 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
         child: Container(
           color: _bg,
           child: LayoutBuilder(builder: (ctx, constraints) {
-            // 시간 레이블이 원 바깥에 그려지므로 충분한 여백 확보 (클리핑 방지)
             final labelMargin = _showTimeLabels ? 48.0 : 24.0;
             final size = (math.min(constraints.maxWidth, constraints.maxHeight) - labelMargin).clamp(100.0, double.infinity);
+
             final filtered = widget.routines.where((r) => r.days.contains(_selectedDay)).toList();
+
+            // 익일 루틴
+            List<Routine> nextDayRoutines = [];
+            if (_nextDayEnabled && _nextDayEndTotal != null) {
+              final nextDayName = _days[(_days.indexOf(_selectedDay) + 1) % 7];
+              nextDayRoutines = widget.routines
+                  .where((r) => r.days.contains(nextDayName) && r.startTotal < _nextDayEndTotal!)
+                  .toList();
+            }
 
             return Center(
               child: GestureDetector(
@@ -127,15 +231,15 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
                   child: CustomPaint(
                     painter: _CirclePainter(
                       routines: filtered,
-                      dayStartHour: widget.dayStartHour,
+                      nextDayRoutines: nextDayRoutines,
+                      dayStartHour: _effectiveDayStartHour,
+                      totalSpanMinutes: _totalSpanMinutes,
                       showTimeLabels: _showTimeLabels,
                       dragStartH: _dragStartH,
                       dragEndH: _dragEndH,
                       isDragging: _isDragging,
                     ),
-                    child: Center(
-                      child: _buildCenterLabel(size),
-                    ),
+                    child: Center(child: _buildCenterLabel(size)),
                   ),
                 ),
               ),
@@ -144,7 +248,6 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
         ),
       ),
 
-      // 드래그 안내
       if (_isDragging && _dragStartH >= 0 && _dragEndH >= 0)
         Container(
           margin: const EdgeInsets.all(10),
@@ -172,12 +275,10 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
         height: innerR * 1.8,
         child: Center(
           child: label.isEmpty
-              ? Icon(Icons.edit_outlined, color: Colors.grey[300], size: 20)
-              : Text(
-                  label,
+              ? null // 연필 아이콘 삭제
+              : Text(label,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF667eea), fontWeight: FontWeight.bold),
-                ),
+                  style: const TextStyle(fontSize: 13, color: Color(0xFF667eea), fontWeight: FontWeight.bold)),
         ),
       ),
     );
@@ -213,7 +314,6 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
     );
   }
 
-  // 드래그
   Offset? _center;
 
   void _onDragStart(DragStartDetails d) {
@@ -247,26 +347,33 @@ class _CircleViewWidgetState extends State<CircleViewWidget> {
     final dx = pos.dx - center.dx, dy = pos.dy - center.dy;
     var angle = math.atan2(dy, dx) + math.pi / 2;
     if (angle < 0) angle += 2 * math.pi;
-    return ((angle / (2 * math.pi) * 24).floor() + widget.dayStartHour) % 24;
+    return ((angle / (2 * math.pi) * 24).floor() + _effectiveDayStartHour) % 24;
   }
 }
 
 // ── 원형 페인터 ──────────────────────────────────────────────
 class _CirclePainter extends CustomPainter {
   final List<Routine> routines;
+  final List<Routine> nextDayRoutines;
   final int dayStartHour;
+  final int totalSpanMinutes; // 보통 24*60, 익일 ON 시 24*60+N
   final bool showTimeLabels;
   final int dragStartH, dragEndH;
   final bool isDragging;
 
   _CirclePainter({
     required this.routines,
+    required this.nextDayRoutines,
     required this.dayStartHour,
+    required this.totalSpanMinutes,
     required this.showTimeLabels,
     required this.dragStartH,
     required this.dragEndH,
     required this.isDragging,
   });
+
+  bool get _isExtended => totalSpanMinutes > 24 * 60;
+  int get _totalSpanHours => (totalSpanMinutes / 60).ceil();
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -274,17 +381,20 @@ class _CirclePainter extends CustomPainter {
     final outerR = math.min(size.width, size.height) / 2 * 0.88;
     final innerR = outerR * 0.58;
 
-    // 배경
     canvas.drawCircle(center, outerR, Paint()..color = const Color(0xFFE8ECFF));
     canvas.drawCircle(center, innerR, Paint()..color = Colors.white);
 
-    // 눈금
     _drawTicks(canvas, center, outerR, innerR);
 
-    // 일정 arc (자정 초과 포함)
+    // 오늘 루틴
     for (final r in routines) {
       final color = r.customColor ?? routineColors[r.colorIndex % routineColors.length].bg;
-      _drawArc(canvas, center, outerR, innerR, r, color);
+      _drawArc(canvas, center, outerR, innerR, r, color, nextDayOffset: 0);
+    }
+    // 익일 루틴 (시간 +24h 오프셋)
+    for (final r in nextDayRoutines) {
+      final color = r.customColor ?? routineColors[r.colorIndex % routineColors.length].bg;
+      _drawArc(canvas, center, outerR, innerR, r, color, nextDayOffset: 24 * 60);
     }
 
     // 드래그 미리보기
@@ -292,45 +402,81 @@ class _CirclePainter extends CustomPainter {
       final s = dragStartH < dragEndH ? dragStartH : dragEndH;
       final e = (dragStartH < dragEndH ? dragEndH : dragStartH) + 1;
       final fakeR = Routine(id:'', label:'', days:[], startHour: s, endHour: e, colorIndex: 0, createdAt: DateTime.now());
-      _drawArc(canvas, center, outerR, innerR, fakeR, const Color(0xFF667eea).withAlpha(100));
+      _drawArc(canvas, center, outerR, innerR, fakeR, const Color(0xFF667eea).withAlpha(100), nextDayOffset: 0);
+    }
+  }
+
+  // 시간 h (0..totalSpanHours) → 각도
+  double _hourToAngle(int h) {
+    if (!_isExtended) {
+      // 일반 모드: dayStartHour 기준 회전
+      final adjusted = (h - dayStartHour + 24) % 24;
+      return adjusted / 24 * 2 * math.pi - math.pi / 2;
+    } else {
+      // 익일 확장 모드: 0시가 맨 위 (dayStartHour=0 강제)
+      return h / _totalSpanHours * 2 * math.pi - math.pi / 2;
+    }
+  }
+
+  // totalMin(분) → 각도
+  double _totalMinToAngle(int totalMin) {
+    if (!_isExtended) {
+      final startMin = dayStartHour * 60;
+      final adjusted = (totalMin - startMin + 24 * 60) % (24 * 60);
+      return adjusted / (24 * 60) * 2 * math.pi - math.pi / 2;
+    } else {
+      return totalMin / totalSpanMinutes * 2 * math.pi - math.pi / 2;
     }
   }
 
   void _drawTicks(Canvas canvas, Offset center, double outerR, double innerR) {
     final paint = Paint()..color = const Color(0xFFD0D4F0)..strokeWidth = 0.8;
-    for (int h = 0; h < 24; h++) {
+    final spanH = _totalSpanHours;
+
+    for (int h = 0; h < spanH; h++) {
       final angle = _hourToAngle(h);
-      // 볼드 위치는 실제 hour가 아닌 원 위의 위치(adjusted) 기준으로 고정
-      final adjusted = (h - dayStartHour + 24) % 24;
-      final isMajor = adjusted % 6 == 0;
+
+      // 볼드 결정
+      final bool isMajor;
+      if (!_isExtended) {
+        final adjusted = (h - dayStartHour + 24) % 24;
+        isMajor = adjusted % 6 == 0;
+      } else {
+        isMajor = h % 6 == 0;
+      }
+
       final tickInner = isMajor ? innerR + 2 : outerR - 8;
-      final tickOuter = outerR;
       canvas.drawLine(
         center + Offset(math.cos(angle) * tickInner, math.sin(angle) * tickInner),
-        center + Offset(math.cos(angle) * tickOuter, math.sin(angle) * tickOuter),
+        center + Offset(math.cos(angle) * outerR, math.sin(angle) * outerR),
         paint..strokeWidth = isMajor ? 1.5 : 0.6,
       );
 
-      // displayH: 실제 시각을 그대로 표시
-      final displayH = h;
+      // 레이블
+      final String displayText;
+      if (h < 24) {
+        if (showTimeLabels) displayText = '$h';
+        else if (isMajor) displayText = '$h시';
+        else displayText = '';
+      } else {
+        // 익일 표시
+        final nd = h - 24;
+        if (showTimeLabels) displayText = '익${nd}';
+        else if (isMajor) displayText = '익일\n${nd}시';
+        else displayText = '';
+      }
 
-      if (showTimeLabels) {
-        // 1시간 단위 전부 표시
+      if (displayText.isNotEmpty) {
         final tp = TextPainter(
           text: TextSpan(
-            text: '$displayH',
-            style: TextStyle(fontSize: isMajor ? 10 : 8, color: isMajor ? const Color(0xFF667eea) : const Color(0xFF9BA4CF)),
+            text: displayText,
+            style: TextStyle(
+              fontSize: (showTimeLabels ? (isMajor ? 10 : 8) : 9),
+              color: isMajor ? const Color(0xFF667eea) : const Color(0xFF9BA4CF),
+            ),
           ),
           textDirection: TextDirection.ltr,
-        );
-        tp.layout();
-        final labelR = outerR + 12;
-        tp.paint(canvas,
-          center + Offset(math.cos(angle) * labelR - tp.width / 2, math.sin(angle) * labelR - tp.height / 2));
-      } else if (isMajor) {
-        final tp = TextPainter(
-          text: TextSpan(text: '$displayH시', style: const TextStyle(fontSize: 9, color: Color(0xFF8892C8))),
-          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.center,
         );
         tp.layout();
         final labelR = outerR + 12;
@@ -340,27 +486,23 @@ class _CirclePainter extends CustomPainter {
     }
   }
 
-  double _hourToAngle(int h) {
-    final adjusted = (h - dayStartHour + 24) % 24;
-    return adjusted / 24 * 2 * math.pi - math.pi / 2;
-  }
+  void _drawArc(Canvas canvas, Offset center, double outerR, double innerR,
+      Routine r, Color color, {required int nextDayOffset}) {
+    final sTotalMin = r.startHour * 60 + r.startMinute + nextDayOffset;
+    int eTotalMin = r.endHour * 60 + r.endMinute + nextDayOffset;
 
-  double _totalMinToAngle(int totalMin) {
-    final startMin = dayStartHour * 60;
-    final adjusted = (totalMin - startMin + 24 * 60) % (24 * 60);
-    return adjusted / (24 * 60) * 2 * math.pi - math.pi / 2;
-  }
+    // crossMidnight 처리 (nextDayOffset이 없는 오늘 루틴만)
+    int durationMin;
+    if (nextDayOffset == 0 && r.crossMidnight) {
+      durationMin = (24 * 60 - (r.startHour * 60 + r.startMinute) + (r.endHour * 60 + r.endMinute));
+    } else {
+      durationMin = (eTotalMin - sTotalMin).clamp(10, totalSpanMinutes);
+    }
 
-  void _drawArc(Canvas canvas, Offset center, double outerR, double innerR, Routine r, Color color) {
-    final sTotalMin = r.startHour * 60 + r.startMinute;
-    final eTotalMin = r.endHour * 60 + r.endMinute;
+    if (durationMin <= 0) return;
 
     final startAngle = _totalMinToAngle(sTotalMin);
-    final durationMin = r.crossMidnight
-        ? (24 * 60 - sTotalMin + eTotalMin)
-        : (eTotalMin - sTotalMin).clamp(10, 24 * 60);
-    final sweepAngle = durationMin / (24 * 60) * 2 * math.pi;
-
+    final sweepAngle = durationMin / totalSpanMinutes * 2 * math.pi;
     if (sweepAngle <= 0.01) return;
 
     final midR = (outerR + innerR) / 2;
@@ -371,10 +513,11 @@ class _CirclePainter extends CustomPainter {
     path.arcTo(Rect.fromCircle(center: center, radius: midR - arcW / 2), startAngle + sweepAngle, -sweepAngle, false);
     path.close();
 
-    canvas.drawPath(path, Paint()..color = color.withAlpha(200)..style = PaintingStyle.fill);
+    // 익일 루틴은 약간 투명하게
+    final alpha = nextDayOffset > 0 ? 160 : 200;
+    canvas.drawPath(path, Paint()..color = color.withAlpha(alpha)..style = PaintingStyle.fill);
     canvas.drawPath(path, Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 1);
 
-    // 라벨: 일정 이름 모두 표시 (호가 충분히 클 때)
     if (r.label.isNotEmpty && sweepAngle > 0.2) {
       final labelAngle = startAngle + sweepAngle / 2;
       final labelPos = center + Offset(math.cos(labelAngle) * midR, math.sin(labelAngle) * midR);
@@ -387,7 +530,6 @@ class _CirclePainter extends CustomPainter {
         textAlign: TextAlign.center,
       );
       tp.layout(maxWidth: arcW * 2.2);
-      // 텍스트 회전 (호 방향으로)
       canvas.save();
       canvas.translate(labelPos.dx, labelPos.dy);
       canvas.rotate(labelAngle + math.pi / 2);
@@ -398,6 +540,8 @@ class _CirclePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CirclePainter o) =>
-      o.routines != routines || o.showTimeLabels != showTimeLabels ||
+      o.routines != routines || o.nextDayRoutines != nextDayRoutines ||
+      o.showTimeLabels != showTimeLabels || o.dayStartHour != dayStartHour ||
+      o.totalSpanMinutes != totalSpanMinutes ||
       o.dragStartH != dragStartH || o.dragEndH != dragEndH || o.isDragging != isDragging;
 }

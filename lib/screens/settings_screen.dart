@@ -1,12 +1,10 @@
-// settings_screen.dart v6
-// - 일정 전체 초기화 버튼 + 확인 팝업
-// - 취침 익일 체크박스 (0~11시 = 익일)
-// - 기상시간 기준 토글 위치 이동 (수면&기상 설정 내부, 스케줄 라이브러리 상단)
-// - 라이브러리 이름 수정 유지
+// settings_screen.dart v7
+// - perDaySleep + useWakeHourAsStart 첫 사용 안내 팝업 (1회)
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/app_settings.dart';
 import '../models/routine.dart';
+import '../services/storage_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final AppSettings settings;
@@ -24,6 +22,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late AppSettings _s;
   final _days = ['월','화','수','목','금','토','일'];
   final _uuid = const Uuid();
+  final _storage = StorageService();
 
   @override
   void initState() { super.initState(); _s = widget.settings; }
@@ -120,6 +119,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  // ── 기상 시간 기준 토글 ──────────────────────────────────────
+  Future<void> _onWakeHourAsStartChanged(bool v) async {
+    _emit(_s.copyWith(useWakeHourAsStart: v));
+    if (v && _s.perDaySleep) {
+      final shown = await _storage.getTipShown('perday_wake');
+      if (!shown && mounted) {
+        await _storage.setTipShown('perday_wake');
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(children: [
+              Icon(Icons.info_outline, color: _theme),
+              const SizedBox(width: 8),
+              const Text('안내', style: TextStyle(fontWeight: FontWeight.bold)),
+            ]),
+            content: const Text('요일별 개별 수면&기상 설정 시\n원형 시간표에만 적용됩니다.'),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _theme, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('확인', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   // ── 일정 초기화 ─────────────────────────────────────────────
@@ -344,7 +374,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text('OFF: 0시부터 / ON: 기상시간부터', style: TextStyle(fontSize: 11, color: Colors.grey[500])),
             ])),
             Switch(value: _s.useWakeHourAsStart, activeThumbColor: _theme,
-              onChanged: (v) => _emit(_s.copyWith(useWakeHourAsStart: v))),
+              onChanged: (v) => _onWakeHourAsStartChanged(v)),
           ]),
         ),
         const SizedBox(height: 20),
